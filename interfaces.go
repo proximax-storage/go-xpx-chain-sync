@@ -2,6 +2,7 @@ package catapult_sync
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"time"
 
@@ -11,25 +12,37 @@ import (
 )
 
 // Change those values if needed depending on the catapult version and used consensus
-// TODO Validate for ProximaX
-const (
-	TransactionDeadline          = time.Minute
-	AggregateTransactionDeadline = time.Minute * 5
+var (
+	TransactionResultsTimeout   = time.Minute * 2
+	TransactionCosigningTimeout = time.Second * 15
 )
 
 var (
 	ErrCatapultTimeout = errors.New("catapult is not responding for too long")
+	ErrCoSignTimeout   = errors.New("no aggregate transaction is requested to cosign")
 )
 
 type TransactionSyncer interface {
+	io.Closer
+
 	Sync(time.Time, sdk.Hash) <-chan Result
-	Announce(ctx context.Context, tx sdk.Transaction, opts ...AnnounceOption) <-chan Result
-	AnnounceFull(ctx context.Context, tx sdk.Transaction) (sdk.Hash, error)
-	AnnounceUnSync(ctx context.Context, tx sdk.Transaction) (*sdk.SignedTransaction, error)
+
+	Announce(ctx context.Context, tx sdk.Transaction) (*sdk.SignedTransaction, error)
+
+	AnnounceSync(ctx context.Context, tx sdk.Transaction, opts ...AnnounceOption) <-chan Result
+
+	CoSign(ctx context.Context, hash sdk.Hash, force bool) error
+
+	Unconfirmed() []sdk.Hash
+
+	UnCosignedTransaction(hash sdk.Hash) *sdk.AggregateTransaction
+
+	UnCosignedTransactions() []*sdk.AggregateTransaction
 }
 
 // Result interface is a result of transaction manipulation.
 // If Err equals to nil then any kind of manipulation on transaction is successful.
+// TODO Change name to appropriate one
 type Result interface {
 	Hash() sdk.Hash
 	Err() error
@@ -74,6 +87,7 @@ func GCTimeout(timeout time.Duration) SyncerOption {
 	}
 }
 
+// Transaction Announcing configuration
 type announceConfig struct {
 	lockDuration int64
 	lockDeadline time.Duration

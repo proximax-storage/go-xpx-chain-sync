@@ -31,7 +31,7 @@ type transactionSyncer struct {
 	cosigners   *sdk.SubscribeSigner
 
 	// Unsigned cache
-	unsignedCache map[sdk.Hash]*sdk.AggregateTransaction // contains all the aggregate transactions Syncer's account taking part in
+	unsignedCache map[sdk.Hash]*sdk.AggregateTransaction // contains all the aggregate transactions Syncer's account taking part in TODO Handle possible memory leak when transactions are not confirmed
 	getUnsigned   chan *unsignedRequest
 
 	// Unconfirmed transactions cache and request channels
@@ -164,9 +164,7 @@ func (syncer *transactionSyncer) dispatcherLoop() {
 				delete(syncer.unconfirmedCache, confirmed.GetAbstractTransaction().Hash)
 			}
 
-			if _, ok := syncer.unsignedCache[confirmed.GetAbstractTransaction().Hash]; ok {
-				delete(syncer.unsignedCache, confirmed.GetAbstractTransaction().Hash)
-			}
+			delete(syncer.unsignedCache, confirmed.GetAbstractTransaction().Hash)
 		case bonded := <-syncer.bonded.Ch:
 			if meta, ok := syncer.unconfirmedCache[bonded.GetAbstractTransaction().Hash]; ok {
 				go pushResult(meta.resultCh, &AggregatedAddedResult{

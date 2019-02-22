@@ -25,6 +25,12 @@ var (
 type TransactionSyncer interface {
 	io.Closer
 
+	transactionAnnouncer
+
+	transactionCache
+}
+
+type transactionAnnouncer interface {
 	Sync(time.Time, sdk.Hash) <-chan Result
 
 	Announce(ctx context.Context, tx sdk.Transaction) (*sdk.SignedTransaction, error)
@@ -32,7 +38,9 @@ type TransactionSyncer interface {
 	AnnounceSync(ctx context.Context, tx sdk.Transaction, opts ...AnnounceOption) <-chan Result
 
 	CoSign(ctx context.Context, hash sdk.Hash, force bool) error
+}
 
+type transactionCache interface {
 	Unconfirmed() []sdk.Hash
 
 	UnCosignedTransaction(hash sdk.Hash) *sdk.AggregateTransaction

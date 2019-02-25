@@ -74,7 +74,7 @@ func WithWsClient(client *sdk.ClientWebsocket) SyncerOption {
 }
 
 // WithHttpClient option configures Catapult SDK client to work with passed one
-func WithHttpClient(client *sdk.Client) SyncerOption {
+func WithClient(client *sdk.Client) SyncerOption {
 	return func(config *syncerConfig) {
 		config.сlient = client
 	}

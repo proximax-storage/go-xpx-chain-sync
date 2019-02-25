@@ -3,7 +3,6 @@ package catapult_sync
 import (
 	"context"
 	"io"
-	"net/http"
 	"time"
 
 	"github.com/pkg/errors"
@@ -63,7 +62,7 @@ type AnnounceOption func(*announceConfig)
 // Syncer configuration
 type syncerConfig struct {
 	wsClient          *sdk.ClientWebsocket
-	httpClient        *http.Client
+	сlient            *sdk.Client
 	connectionTimeout time.Duration
 	gcTimeout         time.Duration
 }
@@ -75,9 +74,9 @@ func WithWsClient(client *sdk.ClientWebsocket) SyncerOption {
 }
 
 // WithHttpClient option configures Catapult SDK client to work with passed one
-func WithHttpClient(client *http.Client) SyncerOption {
+func WithHttpClient(client *sdk.Client) SyncerOption {
 	return func(config *syncerConfig) {
-		config.httpClient = client
+		config.сlient = client
 	}
 }
 

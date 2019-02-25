@@ -65,7 +65,6 @@ func NewTransactionSyncer(ctx context.Context, config *sdk.Config, acc *sdk.Acco
 	syncer := &transactionSyncer{
 		ctx:              ctx,
 		cancel:           cancel,
-		Client:           sdk.NewClient(cfg.httpClient, config),
 		Network:          config.NetworkType,
 		Account:          acc,
 		unsignedCache:    make(map[sdk.Hash]*sdk.AggregateTransaction),

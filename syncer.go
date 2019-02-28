@@ -46,7 +46,7 @@ type transactionSyncer struct {
 
 // NewTransactionSyncer creates new instance of TransactionSyncer
 func NewTransactionSyncer(ctx context.Context, config *sdk.Config, acc *sdk.Account, opts ...SyncerOption) (TransactionSyncer, error) {
-	if acc != nil {
+	if acc == nil {
 		return nil, errors.New("account can't be nil")
 	}
 

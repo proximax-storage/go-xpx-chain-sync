@@ -1,7 +1,7 @@
 package catapult_sync
 
 import (
-	"github.com/proximax-storage/proximax-nem2-sdk-go/sdk"
+	"github.com/proximax-storage/go-xpx-catapult-sdk/sdk"
 )
 
 // AnnounceResult is a struct which defines result of announcing txn.

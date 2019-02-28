@@ -7,7 +7,7 @@ import (
 
 	"github.com/pkg/errors"
 
-	"github.com/proximax-storage/proximax-nem2-sdk-go/sdk"
+	"github.com/proximax-storage/go-xpx-catapult-sdk/sdk"
 )
 
 // Change those values if needed depending on the catapult version and used consensus

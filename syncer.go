@@ -7,7 +7,7 @@ import (
 
 	"github.com/pkg/errors"
 
-	"github.com/proximax-storage/proximax-nem2-sdk-go/sdk"
+	"github.com/proximax-storage/go-xpx-catapult-sdk/sdk"
 )
 
 // TODO Consider adding cache strategies with persisting for cases with unexpected Syncer terminating

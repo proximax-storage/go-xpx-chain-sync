@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/proximax-storage/proximax-nem2-sdk-go/sdk"
+	"github.com/proximax-storage/go-xpx-catapult-sdk/sdk"
 )
 
 // AnnounceFullSync fully synchronise work with Syncer and handles all the incoming Results

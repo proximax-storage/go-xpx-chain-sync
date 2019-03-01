@@ -2,6 +2,7 @@ package catapult_sync
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -10,13 +11,13 @@ import (
 	"github.com/proximax-storage/go-xpx-catapult-sdk/sdk"
 )
 
-const testUrl = "http://54.188.125.153:3000"
-const network = sdk.MijinTest
+const TestUrl = "http://54.188.125.153:3000"
+const NetworkType = sdk.MijinTest
 
-const mainPrivateKey = "28FCECEA252231D2C86E1BCF7DD541552BDBBEFBB09324758B3AC199B4AA7B78"
-const defaultBalance = 5000000000000
+const MainPrivateKey = "28FCECEA252231D2C86E1BCF7DD541552BDBBEFBB09324758B3AC199B4AA7B78"
+const DefaultBalance = 5000000000000
 
-var privateKeys = []string{
+var PrivateKeys = []string{
 	"6FD4CB80311B61083BE4AADC508EC34F0A76E8BECD414288A6E66E7C7E317FB7",
 	"8E7230A591B011C9AA30CB2A429563D2B871087E050FA44061803D8FB931BB82",
 	"C0ACC2412FBD5C4B47A49C538A7F9BB546CA6EF3742EA8AD2E85FDF7C3A484AE",
@@ -29,15 +30,15 @@ var privateKeys = []string{
 	"BE438E3273E9E7E065AC7FC6D7ED6B13C6360461F26820E39989EFA8ED77B0B0",
 }
 
-var syncer, _ = newSyncer(context.Background(), testUrl, network, mainPrivateKey)
+var syncer, _ = newSyncer(context.Background(), TestUrl, NetworkType, MainPrivateKey)
 
 // Prepare account for tests
 func TestBlockChain_PrepareAccounts(t *testing.T) {
 	ctx := context.Background()
 
 	// Check amount of xpx for each account.
-	// If amount lower than defaultBalance, then we send defaultBalance to account
-	for _, privateKey := range privateKeys {
+	// If amount lower than DefaultBalance, then we send DefaultBalance to account
+	for _, privateKey := range PrivateKeys {
 
 		acc, err := sdk.NewAccountFromPrivateKey(privateKey, syncer.Network)
 		assert.Nil(t, err)
@@ -55,12 +56,12 @@ func TestBlockChain_PrepareAccounts(t *testing.T) {
 			}
 		}
 
-		if amount < defaultBalance {
+		if amount < DefaultBalance {
 			err := sendMosaic(
 				ctx,
 				syncer,
 				acc.PublicAccount,
-				sdk.Xpx(defaultBalance),
+				sdk.Xpx(DefaultBalance),
 				sdk.NewPlainMessage("Add mosaic to test account"))
 
 			assert.Nil(t, err)
@@ -68,9 +69,9 @@ func TestBlockChain_PrepareAccounts(t *testing.T) {
 	}
 }
 
-func TestTransactionSyncer_Announce(t *testing.T) {
+func TestTransactionSyncer_AnnounceFullSync_Transfer(t *testing.T) {
 	ctx := context.Background()
-	acc, err := sdk.NewAccountFromPrivateKey(privateKeys[2], syncer.Network)
+	acc, err := sdk.NewAccountFromPrivateKey(PrivateKeys[2], syncer.Network)
 	assert.Nil(t, err)
 
 	err = sendMosaic(
@@ -80,6 +81,74 @@ func TestTransactionSyncer_Announce(t *testing.T) {
 		sdk.Xpx(100),
 		sdk.NewPlainMessage("Add mosaic to test account"))
 	assert.Nil(t, err)
+}
+
+func TestTransactionSyncer_AnnounceFullSync_Bonded(t *testing.T) {
+	ctx := context.Background()
+	acc, err := sdk.NewAccountFromPrivateKey(PrivateKeys[2], syncer.Network)
+	assert.Nil(t, err)
+
+	tx1, _ := sdk.NewTransferTransaction(
+		sdk.NewDeadline(time.Hour),
+		syncer.Account.PublicAccount.Address,
+		[]*sdk.Mosaic{sdk.XpxRelative(10)},
+		sdk.NewPlainMessage("tx1"),
+		syncer.Network,
+	)
+	tx1.ToAggregate(acc.PublicAccount)
+
+	tx2, _ := sdk.NewTransferTransaction(
+		sdk.NewDeadline(time.Hour),
+		acc.PublicAccount.Address,
+		[]*sdk.Mosaic{sdk.XpxRelative(20)},
+		sdk.NewPlainMessage("tx2"),
+		syncer.Network,
+	)
+	tx2.ToAggregate(syncer.Account.PublicAccount)
+
+	aTx, _ := sdk.NewBondedAggregateTransaction(
+		sdk.NewDeadline(time.Hour),
+		[]sdk.Transaction{
+			tx1,
+			tx2,
+		},
+		syncer.Network,
+	)
+
+	results := syncer.AnnounceSync(ctx, aTx)
+
+loop:
+	for {
+		select {
+		case res := <-results:
+			switch res.(type) {
+			case *AnnounceResult:
+				if res.Err() != nil {
+					assert.Nil(t, res.Err())
+					break loop
+				}
+
+				scotx, err := acc.SignCosignatureTransaction(sdk.NewCosignatureTransactionFromHash(res.Hash()))
+				if err != nil {
+					assert.Nil(t, err)
+					break loop
+				}
+
+				_, err = syncer.Client.Transaction.AnnounceAggregateBondedCosignature(ctx, scotx)
+				if err != nil {
+					assert.Nil(t, err)
+					break loop
+				}
+			case *CoSignatureResult:
+				assert.True(t, res.(*CoSignatureResult).Signer() == strings.ToUpper(acc.PublicAccount.PublicKey))
+			case *ConfirmationResult:
+				assert.Nil(t, res.Err())
+				break loop
+			}
+		case <-time.After(TransactionResultsTimeout):
+			assert.FailNow(t, "timeout exceeded")
+		}
+	}
 }
 
 func newSyncer(ctx context.Context, url string, network sdk.NetworkType, key string) (*transactionSyncer, error) {

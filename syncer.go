@@ -16,7 +16,7 @@ type transactionSyncer struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	// Optional Syncer account
+	// Syncer's account
 	Account *sdk.Account
 
 	// Catapult SDK related
@@ -268,17 +268,15 @@ func (syncer *transactionSyncer) Announce(ctx context.Context, tx sdk.Transactio
 // AnnounceSync wraps Announce and Sync methods to synchronize and validate transaction announcing.
 // Can return multiple results depending on what happening with transaction on catapult side.
 func (syncer *transactionSyncer) AnnounceSync(ctx context.Context, tx sdk.Transaction, opts ...AnnounceOption) <-chan Result {
-	var err error
 	result := new(AnnounceResult)
 
 	resultCh := make(chan Result, 1)
 	defer func() {
-		result.err = err
 		resultCh <- result
 	}()
 
 	if tx == nil {
-		err = errors.New("nil transaction passed")
+		result.err = errors.New("nil transaction passed")
 		return resultCh
 	}
 
@@ -286,14 +284,12 @@ func (syncer *transactionSyncer) AnnounceSync(ctx context.Context, tx sdk.Transa
 		return syncer.announceAggregateSync(ctx, tx.(*sdk.AggregateTransaction), opts...)
 	}
 
-	signedTxn, err := syncer.Announce(ctx, tx)
-	if err != nil {
+	result.signedTxn, result.err = syncer.Announce(ctx, tx)
+	if result.err != nil {
 		return resultCh
 	}
 
-	result.signedTxn = signedTxn
-
-	syncer.handleTxn(tx.GetAbstractTransaction().Deadline.Time, signedTxn.Hash, resultCh)
+	syncer.handleTxn(tx.GetAbstractTransaction().Deadline.Time, result.signedTxn.Hash, resultCh)
 
 	return resultCh
 }
@@ -303,7 +299,7 @@ func (syncer *transactionSyncer) AnnounceSync(ctx context.Context, tx sdk.Transa
 // otherwise transaction won't be handled and would be cleaned after specified deadline
 // TODO Possible delete of this method? Cause of no ability to check if txn was announced
 func (syncer *transactionSyncer) Sync(deadline time.Time, hash sdk.Hash) <-chan Result {
-	resultCh := make(chan Result)
+	resultCh := make(chan Result, 1)
 	syncer.handleTxn(deadline, hash, resultCh)
 	return resultCh
 }
@@ -371,17 +367,15 @@ func (syncer *transactionSyncer) Close() (err error) {
 }
 
 func (syncer *transactionSyncer) announceAggregateSync(ctx context.Context, tx *sdk.AggregateTransaction, opts ...AnnounceOption) <-chan Result {
-	var result *AnnounceResult
-	var err error
+	result := new(AnnounceResult)
 
 	resultCh := make(chan Result, 32) // 32 cause possible amount of CoSignatureResults is big
 	defer func() {
-		result.err = err
 		resultCh <- result
 	}()
 
-	signedTx, err := syncer.Account.Sign(tx)
-	if err != nil {
+	result.signedTxn, result.err = syncer.Account.Sign(tx)
+	if result.err != nil {
 		return resultCh
 	}
 
@@ -396,18 +390,18 @@ func (syncer *transactionSyncer) announceAggregateSync(ctx context.Context, tx *
 		opt(cfg)
 	}
 
-	err = syncer.lockFundsSync(ctx, cfg.lockAmount, cfg.lockDuration, cfg.lockDeadline, signedTx)
-	if err != nil {
-		err = errors.Wrap(err, "can't lock funds")
+	result.err = syncer.lockFundsSync(ctx, cfg.lockAmount, cfg.lockDuration, cfg.lockDeadline, result.signedTxn)
+	if result.err != nil {
+		result.err = errors.Wrap(result.err, "can't lock funds")
 		return resultCh
 	}
 
-	_, err = syncer.Client.Transaction.AnnounceAggregateBonded(ctx, signedTx)
-	if err != nil {
+	_, result.err = syncer.Client.Transaction.AnnounceAggregateBonded(ctx, result.signedTxn)
+	if result.err != nil {
 		return resultCh
 	}
 
-	syncer.handleTxn(tx.Deadline.Time, signedTx.Hash, resultCh)
+	syncer.handleTxn(tx.Deadline.Time, result.signedTxn.Hash, resultCh)
 
 	return resultCh
 }
@@ -433,7 +427,21 @@ func (syncer *transactionSyncer) lockFundsSync(ctx context.Context, amount, dura
 		return err
 	}
 
-	return (<-syncer.Sync(lockTx.Deadline.Time, signedLockTx.Hash)).Err()
+	results := syncer.Sync(lockTx.Deadline.Time, signedLockTx.Hash)
+
+	for {
+		select {
+		case res := <-results:
+			switch res.(type) {
+			case *ConfirmationResult:
+				return res.Err()
+			}
+		case <-time.After(TransactionResultsTimeout):
+			return ErrCatapultTimeout
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
 }
 
 func (syncer *transactionSyncer) coSign(ctx context.Context, hash sdk.Hash) error {

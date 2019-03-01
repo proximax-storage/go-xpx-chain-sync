@@ -22,9 +22,10 @@ func AnnounceFullSync(ctx context.Context, syncer TransactionSyncer, tx sdk.Tran
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 
+	results := syncer.AnnounceSync(ctx, tx, opts...)
 	for {
 		select {
-		case res := <-syncer.AnnounceSync(ctx, tx, opts...):
+		case res := <-results:
 			switch res.(type) {
 			case *AnnounceResult:
 				if res.Err() != nil {
@@ -32,8 +33,6 @@ func AnnounceFullSync(ctx context.Context, syncer TransactionSyncer, tx sdk.Tran
 				}
 			case *ConfirmationResult:
 				return res.Err()
-			default:
-				break
 			}
 		case <-timer.C:
 			return ErrCatapultTimeout

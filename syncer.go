@@ -3,6 +3,7 @@ package catapult_sync
 import (
 	"context"
 	"math/big"
+	"net/http"
 	"time"
 
 	"github.com/pkg/errors"
@@ -82,6 +83,12 @@ func NewTransactionSyncer(ctx context.Context, config *sdk.Config, acc *sdk.Acco
 		}
 	} else {
 		syncer.WSClient = cfg.wsClient
+	}
+
+	if cfg.сlient == nil {
+		syncer.Client = sdk.NewClient(http.DefaultClient, config)
+	} else {
+		syncer.Client = cfg.сlient
 	}
 
 	if err = syncer.subscribe(); err != nil {
@@ -261,10 +268,10 @@ func (syncer *transactionSyncer) Announce(ctx context.Context, tx sdk.Transactio
 // AnnounceSync wraps Announce and Sync methods to synchronize and validate transaction announcing.
 // Can return multiple results depending on what happening with transaction on catapult side.
 func (syncer *transactionSyncer) AnnounceSync(ctx context.Context, tx sdk.Transaction, opts ...AnnounceOption) <-chan Result {
-	var result *AnnounceResult
 	var err error
+	result := new(AnnounceResult)
 
-	resultCh := make(chan Result, 3)
+	resultCh := make(chan Result, 1)
 	defer func() {
 		result.err = err
 		resultCh <- result

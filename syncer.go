@@ -166,7 +166,7 @@ func (syncer *transactionSyncer) dispatcherLoop() {
 					hash: meta.hash,
 					tx:   confirmed,
 				})
-
+				close(meta.resultCh)
 				delete(syncer.unconfirmedCache, confirmed.GetAbstractTransaction().Hash)
 			}
 
@@ -230,6 +230,10 @@ func (syncer *transactionSyncer) dispatcherLoop() {
 		case <-syncer.ctx.Done():
 			syncer.collectGarbage()
 			syncer.gc.Stop()
+
+			for _, meta := range syncer.unconfirmedCache {
+				close(meta.resultCh)
+			}
 
 			syncer.unconfirmedCache = nil
 			syncer.unsignedCache = nil
@@ -297,7 +301,6 @@ func (syncer *transactionSyncer) AnnounceSync(ctx context.Context, tx sdk.Transa
 // Sync handles announced and signed transaction and returns multiple results through channel
 // Pass only hash of announced transactions related to Syncer,
 // otherwise transaction won't be handled and would be cleaned after specified deadline
-// TODO Possible delete of this method? Cause of no ability to check if txn was announced
 func (syncer *transactionSyncer) Sync(deadline time.Time, hash sdk.Hash) <-chan Result {
 	resultCh := make(chan Result, 1)
 	syncer.handleTxn(deadline, hash, resultCh)
@@ -311,17 +314,30 @@ func (syncer *transactionSyncer) CoSign(ctx context.Context, hash sdk.Hash, forc
 		return syncer.coSign(ctx, hash)
 	}
 
-	timeout := time.After(TransactionCosigningTimeout)
-	ticker := time.Tick(defReadTimeout)
+	tx := syncer.UnCosignedTransaction(hash)
+	if tx != nil {
+		return syncer.coSign(ctx, hash)
+	}
 
+	results := syncer.Sync(time.Now().Add(TransactionCosigningTimeout), hash)
 	for {
 		select {
-		case <-timeout:
-			return ErrCoSignTimeout
-		case <-ticker:
-			tx := syncer.UnCosignedTransaction(hash)
-			if tx != nil {
+		case res := <-results:
+			switch res.(type) {
+			case *AggregatedAddedResult:
 				return syncer.coSign(ctx, hash)
+			case *ConfirmationResult:
+				if res.Err() == ErrTxnDeadlineExceeded {
+					tx := syncer.UnCosignedTransaction(hash)
+					if tx != nil {
+						return syncer.coSign(ctx, hash)
+					}
+
+					return ErrCoSignTimeout
+				}
+				// hmm, very strange behavior...
+
+				return res.Err()
 			}
 		case <-ctx.Done():
 			return ctx.Err()
@@ -342,7 +358,11 @@ func (syncer *transactionSyncer) UnCosignedTransaction(hash sdk.Hash) *sdk.Aggre
 	out := make(chan []*sdk.AggregateTransaction, 1)
 	syncer.getUnsigned <- &unsignedRequest{resp: out, hash: hash}
 
-	return (<-out)[0]
+	if txs := <-out; txs != nil {
+		return txs[0]
+	}
+
+	return nil
 }
 
 // UnCosignedTransactions returns all aggregate bonded transactions in which Syncer's account is taking part
@@ -483,6 +503,11 @@ func (syncer *transactionSyncer) handleTxn(deadline time.Time, hash sdk.Hash, re
 func (syncer *transactionSyncer) collectGarbage() {
 	for hash, meta := range syncer.unconfirmedCache {
 		if meta.isValid() {
+			meta.resultCh <- &ConfirmationResult{
+				hash: meta.hash,
+				err:  ErrTxnDeadlineExceeded,
+			}
+			close(meta.resultCh)
 			delete(syncer.unconfirmedCache, hash)
 		}
 	}
@@ -494,7 +519,6 @@ const (
 	defLockDuration = 240
 	defLockDeadline = time.Hour
 	defLockAmount   = 10
-	defReadTimeout  = time.Millisecond * 100
 )
 
 type transactionMeta struct {

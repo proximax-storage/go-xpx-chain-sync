@@ -139,8 +139,22 @@ func (syncer *transactionSyncer) subscribe() (err error) {
 // It handles all the incoming data from subscriptions and syncs it with underlying cache.
 // Also process requests on what transaction to sync and data return requests
 func (syncer *transactionSyncer) dispatcherLoop() {
-	pushResult := func(ch chan<- Result, res Result) {
+	pushResult := func(ch chan<- Result, res Result, closing bool) {
+		defer func() {
+			recover()
+		}()
+
 		ch <- res
+
+		if closing {
+			close(ch)
+		}
+	}
+
+	metaGc := func(meta *transactionMeta, res *ConfirmationResult) {
+		res.hash = meta.hash
+		go pushResult(meta.resultCh, res, true)
+		delete(syncer.unconfirmedCache, meta.hash)
 	}
 
 	for {
@@ -153,21 +167,11 @@ func (syncer *transactionSyncer) dispatcherLoop() {
 		// Listening to websocket
 		case status := <-syncer.status.Ch: // TODO Parse statuses to return right result
 			if meta, ok := syncer.unconfirmedCache[status.Hash]; ok {
-				go pushResult(meta.resultCh, &ConfirmationResult{
-					hash: meta.hash,
-					err:  errors.New(status.Status), // TODO Introduce new error type with all possible Catapult errors
-				})
-
-				delete(syncer.unconfirmedCache, status.Hash)
+				metaGc(meta, &ConfirmationResult{err: errors.New(status.Status)}) // TODO Introduce new error type with all possible Catapult errors
 			}
 		case confirmed := <-syncer.confirmed.Ch:
 			if meta, ok := syncer.unconfirmedCache[confirmed.GetAbstractTransaction().Hash]; ok {
-				go pushResult(meta.resultCh, &ConfirmationResult{
-					hash: meta.hash,
-					tx:   confirmed,
-				})
-				close(meta.resultCh)
-				delete(syncer.unconfirmedCache, confirmed.GetAbstractTransaction().Hash)
+				metaGc(meta, &ConfirmationResult{tx: confirmed})
 			}
 
 			delete(syncer.unsignedCache, confirmed.GetAbstractTransaction().Hash)
@@ -175,7 +179,7 @@ func (syncer *transactionSyncer) dispatcherLoop() {
 			if meta, ok := syncer.unconfirmedCache[bonded.GetAbstractTransaction().Hash]; ok {
 				go pushResult(meta.resultCh, &AggregatedAddedResult{
 					tx: bonded,
-				})
+				}, false)
 			} else {
 				// Unhandled transaction received, saving to cache...
 				syncer.unsignedCache[bonded.GetAbstractTransaction().Hash] = bonded
@@ -186,14 +190,14 @@ func (syncer *transactionSyncer) dispatcherLoop() {
 					txHash:    cosignature.ParentHash,
 					signer:    cosignature.Signer,
 					signature: cosignature.Signature,
-				})
+				}, false)
 			}
 		case unconfirmed := <-syncer.unconfirmed.Ch:
 			if meta, ok := syncer.unconfirmedCache[unconfirmed.GetAbstractTransaction().Hash]; ok {
 				meta.unconfirmed = true
 				go pushResult(meta.resultCh, &UnconfirmedResult{
 					tx: unconfirmed,
-				})
+				}, false)
 			}
 
 		// Value requests
@@ -226,9 +230,9 @@ func (syncer *transactionSyncer) dispatcherLoop() {
 
 		// Util
 		case <-syncer.gc.C:
-			syncer.collectGarbage()
+			syncer.collectGarbage(metaGc)
 		case <-syncer.ctx.Done():
-			syncer.collectGarbage()
+			syncer.collectGarbage(metaGc)
 			syncer.gc.Stop()
 
 			for _, meta := range syncer.unconfirmedCache {
@@ -500,15 +504,10 @@ func (syncer *transactionSyncer) handleTxn(deadline time.Time, hash sdk.Hash, re
 	}
 }
 
-func (syncer *transactionSyncer) collectGarbage() {
-	for hash, meta := range syncer.unconfirmedCache {
+func (syncer *transactionSyncer) collectGarbage(gc transactionMetaGCFunc) {
+	for _, meta := range syncer.unconfirmedCache {
 		if meta.isValid() {
-			meta.resultCh <- &ConfirmationResult{
-				hash: meta.hash,
-				err:  ErrTxnDeadlineExceeded,
-			}
-			close(meta.resultCh)
-			delete(syncer.unconfirmedCache, hash)
+			gc(meta, &ConfirmationResult{err: ErrTxnDeadlineExceeded})
 		}
 	}
 }
@@ -532,6 +531,8 @@ func (meta *transactionMeta) isValid() bool {
 	now := time.Now()
 	return meta.deadline.Before(now) || meta.deadline.Equal(now)
 }
+
+type transactionMetaGCFunc func(*transactionMeta, *ConfirmationResult)
 
 type unsignedRequest struct {
 	resp chan []*sdk.AggregateTransaction

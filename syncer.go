@@ -48,7 +48,11 @@ type transactionSyncer struct {
 // NewTransactionSyncer creates new instance of TransactionSyncer
 func NewTransactionSyncer(ctx context.Context, config *sdk.Config, acc *sdk.Account, opts ...SyncerOption) (TransactionSyncer, error) {
 	if acc == nil {
-		return nil, errors.New("account can't be nil")
+		return nil, errors.New("nil account passed")
+	}
+
+	if config == nil {
+		return nil, errors.New("nil config passed")
 	}
 
 	var err error
@@ -306,6 +310,10 @@ func (syncer *transactionSyncer) AnnounceSync(ctx context.Context, tx sdk.Transa
 // Pass only hash of announced transactions related to Syncer,
 // otherwise transaction won't be handled and would be cleaned after specified deadline
 func (syncer *transactionSyncer) Sync(deadline time.Time, hash sdk.Hash) <-chan Result {
+	if hash == "" {
+		return nil
+	}
+
 	resultCh := make(chan Result, 1)
 	syncer.handleTxn(deadline, hash, resultCh)
 	return resultCh
@@ -314,6 +322,10 @@ func (syncer *transactionSyncer) Sync(deadline time.Time, hash sdk.Hash) <-chan 
 // CoSign cosigns any transaction by given hash with Syncer's account.
 // If force is false, validates if that transaction exists through some time.
 func (syncer *transactionSyncer) CoSign(ctx context.Context, hash sdk.Hash, force bool) error {
+	if hash == "" {
+		return errors.New("empty hash passed")
+	}
+
 	if force {
 		return syncer.coSign(ctx, hash)
 	}
@@ -359,6 +371,10 @@ func (syncer *transactionSyncer) Unconfirmed() []sdk.Hash { // TODO Return more 
 
 // UnCosignedTransaction returns aggregate bonded transaction in which Syncer's account signature is requested.
 func (syncer *transactionSyncer) UnCosignedTransaction(hash sdk.Hash) *sdk.AggregateTransaction {
+	if hash == "" {
+		return nil
+	}
+
 	out := make(chan []*sdk.AggregateTransaction, 1)
 	syncer.getUnsigned <- &unsignedRequest{resp: out, hash: hash}
 
@@ -469,20 +485,7 @@ func (syncer *transactionSyncer) lockFundsSync(ctx context.Context, amount, dura
 }
 
 func (syncer *transactionSyncer) coSign(ctx context.Context, hash sdk.Hash) error {
-	tx := &sdk.AggregateTransaction{
-		AbstractTransaction: sdk.AbstractTransaction{
-			TransactionInfo: &sdk.TransactionInfo{
-				Hash: hash,
-			},
-		},
-	}
-
-	cTx, err := sdk.NewCosignatureTransaction(tx)
-	if err != nil {
-		return err
-	}
-
-	sTx, err := syncer.Account.SignCosignatureTransaction(cTx)
+	sTx, err := syncer.Account.SignCosignatureTransaction(sdk.NewCosignatureTransactionFromHash(hash))
 	if err != nil {
 		return err
 	}

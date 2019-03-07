@@ -7,6 +7,18 @@ import (
 	"github.com/proximax-storage/go-xpx-catapult-sdk/sdk"
 )
 
+// TODO Get Config from client
+func Announce(ctx context.Context, config *sdk.Config, client *sdk.ClientWebsocket, from *sdk.Account, tx sdk.Transaction, opts ...AnnounceOption) error {
+	syncer, err := NewTransactionSyncer(ctx, config, from, WithWsClient(client))
+	if err != nil {
+		return err
+	}
+
+	defer syncer.Close()
+
+	return AnnounceFullSync(ctx, syncer, tx, opts...)
+}
+
 // AnnounceFullSync fully synchronise work with Syncer and handles all the incoming Results
 // Also it is a reference on how to handle Results for different manipulation and for any kind of business logic.
 func AnnounceFullSync(ctx context.Context, syncer TransactionSyncer, tx sdk.Transaction, opts ...AnnounceOption) error {
@@ -22,9 +34,11 @@ func AnnounceFullSync(ctx context.Context, syncer TransactionSyncer, tx sdk.Tran
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 
+	results := syncer.AnnounceSync(ctx, tx, opts...)
+
 	for {
 		select {
-		case res := <-syncer.AnnounceSync(ctx, tx, opts...):
+		case res := <-results:
 			switch res.(type) {
 			case *AnnounceResult:
 				if res.Err() != nil {
@@ -32,8 +46,6 @@ func AnnounceFullSync(ctx context.Context, syncer TransactionSyncer, tx sdk.Tran
 				}
 			case *ConfirmationResult:
 				return res.Err()
-			default:
-				break
 			}
 		case <-timer.C:
 			return ErrCatapultTimeout

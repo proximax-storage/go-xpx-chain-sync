@@ -17,8 +17,9 @@ var (
 )
 
 var (
-	ErrCatapultTimeout = errors.New("catapult is not responding for too long")
-	ErrCoSignTimeout   = errors.New("no aggregate transaction is requested to cosign")
+	ErrCatapultTimeout     = errors.New("catapult is not responding for too long")
+	ErrCoSignTimeout       = errors.New("no aggregate transaction is requested to cosign")
+	ErrTxnDeadlineExceeded = errors.New("transaction deadline exceeded")
 )
 
 type TransactionSyncer interface {

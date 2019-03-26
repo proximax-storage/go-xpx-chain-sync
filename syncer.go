@@ -89,10 +89,10 @@ func NewTransactionSyncer(ctx context.Context, config *sdk.Config, acc *sdk.Acco
 		syncer.WSClient = cfg.wsClient
 	}
 
-	if cfg.сlient == nil {
+	if cfg.client == nil {
 		syncer.Client = sdk.NewClient(http.DefaultClient, config)
 	} else {
-		syncer.Client = cfg.сlient
+		syncer.Client = cfg.client
 	}
 
 	if err = syncer.subscribe(); err != nil {

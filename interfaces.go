@@ -63,7 +63,7 @@ type AnnounceOption func(*announceConfig)
 // Syncer configuration
 type syncerConfig struct {
 	wsClient          *sdk.ClientWebsocket
-	сlient            *sdk.Client
+	client            *sdk.Client
 	connectionTimeout time.Duration
 	gcTimeout         time.Duration
 }
@@ -77,7 +77,7 @@ func WithWsClient(client *sdk.ClientWebsocket) SyncerOption {
 // WithHttpClient option configures Catapult SDK client to work with passed one
 func WithClient(client *sdk.Client) SyncerOption {
 	return func(config *syncerConfig) {
-		config.сlient = client
+		config.client = client
 	}
 }
 

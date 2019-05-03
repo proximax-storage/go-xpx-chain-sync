@@ -2,13 +2,14 @@ package catapult_sync
 
 import (
 	"context"
+	"github.com/proximax-storage/go-xpx-catapult-sdk/sdk/websocket"
 	"time"
 
 	"github.com/proximax-storage/go-xpx-catapult-sdk/sdk"
 )
 
 // TODO Get Config from client
-func Announce(ctx context.Context, config *sdk.Config, client *sdk.ClientWebsocket, from *sdk.Account, tx sdk.Transaction, opts ...AnnounceOption) error {
+func Announce(ctx context.Context, config *sdk.Config, client websocket.CatapultClient, from *sdk.Account, tx sdk.Transaction, opts ...AnnounceOption) error {
 	syncer, err := NewTransactionSyncer(ctx, config, from, WithWsClient(client))
 	if err != nil {
 		return err

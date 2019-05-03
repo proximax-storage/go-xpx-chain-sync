@@ -3,6 +3,7 @@ package catapult_sync
 import (
 	"context"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -120,7 +121,12 @@ func TestTransactionSyncer_AnnounceFullSync_Bonded(t *testing.T) {
 loop:
 	for {
 		select {
-		case res := <-results:
+		case res, ok := <-results:
+
+			if !ok {
+				assert.FailNow(t, "results chanel was closed")
+			}
+
 			switch res.(type) {
 			case *AnnounceResult:
 				if res.Err() != nil {
@@ -133,6 +139,21 @@ loop:
 					assert.Nil(t, err)
 					break loop
 				}
+
+				wg := &sync.WaitGroup{}
+				wg.Add(1)
+
+				err = syncer.WSClient.AddPartialAddedHandlers(acc.Address, func(transaction *sdk.AggregateTransaction) bool {
+					wg.Done()
+					return true
+				})
+
+				if err != nil {
+					wg.Done()
+					assert.FailNow(t, "error adding subscriber to PartialAdded topic")
+				}
+
+				wg.Wait()
 
 				_, err = syncer.Client.Transaction.AnnounceAggregateBondedCosignature(ctx, scotx)
 				if err != nil {

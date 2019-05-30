@@ -2,6 +2,7 @@ package catapult_sync
 
 import (
 	"context"
+	"github.com/proximax-storage/go-xpx-catapult-sdk/sdk/websocket"
 	"math/big"
 	"net/http"
 	"time"
@@ -21,15 +22,14 @@ type transactionSyncer struct {
 
 	// Catapult SDK related
 	Client   *sdk.Client
-	WSClient *sdk.ClientWebsocket
+	WSClient websocket.CatapultClient
 	Network  sdk.NetworkType
 
-	// WebSocket Subscriptions
-	confirmed   *sdk.SubscribeTransaction
-	unconfirmed *sdk.SubscribeTransaction
-	status      *sdk.SubscribeStatus
-	bonded      *sdk.SubscribeBonded
-	cosigners   *sdk.SubscribeSigner
+	statusChanel           chan *sdk.StatusInfo
+	confirmedAddedChanel   chan sdk.Transaction
+	partialAddedChanel     chan *sdk.AggregateTransaction
+	cosignatureChanel      chan *sdk.SignerInfo
+	unconfirmedAddedChanel chan sdk.Transaction
 
 	// Unsigned cache
 	unsignedCache map[sdk.Hash]*sdk.AggregateTransaction // contains all the aggregate transactions Syncer's account taking part in TODO Handle possible memory leak when transactions are not confirmed
@@ -76,24 +76,33 @@ func NewTransactionSyncer(ctx context.Context, config *sdk.Config, acc *sdk.Acco
 		getUnsigned:      make(chan *unsignedRequest),
 		unconfirmedCache: make(map[sdk.Hash]*transactionMeta),
 		newUnconfirmed:   make(chan *transactionMeta),
-		gc:               time.NewTicker(cfg.gcTimeout),
-		cfg:              cfg,
+
+		statusChanel:           make(chan *sdk.StatusInfo),
+		confirmedAddedChanel:   make(chan sdk.Transaction),
+		partialAddedChanel:     make(chan *sdk.AggregateTransaction),
+		cosignatureChanel:      make(chan *sdk.SignerInfo),
+		unconfirmedAddedChanel: make(chan sdk.Transaction),
+
+		gc:  time.NewTicker(cfg.gcTimeout),
+		cfg: cfg,
 	}
 
 	if cfg.wsClient == nil {
-		syncer.WSClient, err = sdk.NewConnectWs(config.BaseURL.String(), cfg.connectionTimeout)
+		syncer.WSClient, err = websocket.NewClient(ctx, config)
 		if err != nil {
-			return nil, errors.Wrapf(err, "error while connecting to %s Catapult REST via WebSocket", config.BaseURL.String())
+			return nil, errors.Wrap(err, "creating websocket client")
 		}
 	} else {
 		syncer.WSClient = cfg.wsClient
 	}
 
-	if cfg.сlient == nil {
+	if cfg.client == nil {
 		syncer.Client = sdk.NewClient(http.DefaultClient, config)
 	} else {
-		syncer.Client = cfg.сlient
+		syncer.Client = cfg.client
 	}
+
+	go syncer.WSClient.Listen()
 
 	if err = syncer.subscribe(); err != nil {
 		return nil, err
@@ -105,38 +114,45 @@ func NewTransactionSyncer(ctx context.Context, config *sdk.Config, acc *sdk.Acco
 }
 
 // subscribe initialize listening to websocket
-func (syncer *transactionSyncer) subscribe() (err error) {
-	syncer.status, err = syncer.WSClient.Subscribe.Status(syncer.Account.Address)
-	if err != nil {
-		err = errors.Wrap(err, "error while listening to status ")
-		return
+func (syncer *transactionSyncer) subscribe() error {
+	var err error
+
+	if err := syncer.WSClient.AddStatusHandlers(syncer.Account.Address, func(info *sdk.StatusInfo) bool {
+		syncer.statusChanel <- info
+		return true
+	}); err != nil {
+		return errors.Wrap(err, "adding status subscriber")
 	}
 
-	syncer.confirmed, err = syncer.WSClient.Subscribe.ConfirmedAdded(syncer.Account.Address)
-	if err != nil {
-		err = errors.Wrap(err, "error while listening to confirmed")
-		return
+	if err = syncer.WSClient.AddConfirmedAddedHandlers(syncer.Account.Address, func(transaction sdk.Transaction) bool {
+		syncer.confirmedAddedChanel <- transaction
+		return false
+	}); err != nil {
+		return errors.Wrap(err, "adding confirmed added subscriber")
 	}
 
-	syncer.bonded, err = syncer.WSClient.Subscribe.PartialAdded(syncer.Account.Address)
-	if err != nil {
-		err = errors.Wrap(err, "error while listening to partial")
-		return
+	if err = syncer.WSClient.AddPartialAddedHandlers(syncer.Account.Address, func(transaction *sdk.AggregateTransaction) bool {
+		syncer.partialAddedChanel <- transaction
+		return false
+	}); err != nil {
+		return errors.Wrap(err, "adding partial added subscriber")
 	}
 
-	syncer.cosigners, err = syncer.WSClient.Subscribe.Cosignature(syncer.Account.Address)
-	if err != nil {
-		err = errors.Wrap(err, "error while listening to cosigners")
-		return
+	if err = syncer.WSClient.AddCosignatureHandlers(syncer.Account.Address, func(info *sdk.SignerInfo) bool {
+		syncer.cosignatureChanel <- info
+		return false
+	}); err != nil {
+		return errors.Wrap(err, "adding cosignature subscriber")
 	}
 
-	syncer.unconfirmed, err = syncer.WSClient.Subscribe.UnconfirmedAdded(syncer.Account.Address)
-	if err != nil {
-		err = errors.Wrap(err, "error while listening to unconfirmed transactions ")
-		return
+	if err = syncer.WSClient.AddUnconfirmedAddedHandlers(syncer.Account.Address, func(transaction sdk.Transaction) bool {
+		syncer.unconfirmedAddedChanel <- transaction
+		return false
+	}); err != nil {
+		return errors.Wrap(err, "adding unconfirmed added subscriber")
 	}
 
-	return
+	return err
 }
 
 // dispatcherLoop method does most of Syncer logic.
@@ -169,17 +185,17 @@ func (syncer *transactionSyncer) dispatcherLoop() {
 			syncer.unconfirmedCache[meta.hash] = meta
 
 		// Listening to websocket
-		case status := <-syncer.status.Ch: // TODO Parse statuses to return right result
+		case status := <-syncer.statusChanel: // TODO Parse statuses to return right result
 			if meta, ok := syncer.unconfirmedCache[status.Hash]; ok {
 				metaGc(meta, &ConfirmationResult{err: errors.New(status.Status)}) // TODO Introduce new error type with all possible Catapult errors
 			}
-		case confirmed := <-syncer.confirmed.Ch:
+		case confirmed := <-syncer.confirmedAddedChanel:
 			if meta, ok := syncer.unconfirmedCache[confirmed.GetAbstractTransaction().Hash]; ok {
 				metaGc(meta, &ConfirmationResult{tx: confirmed})
 			}
 
 			delete(syncer.unsignedCache, confirmed.GetAbstractTransaction().Hash)
-		case bonded := <-syncer.bonded.Ch:
+		case bonded := <-syncer.partialAddedChanel:
 			if meta, ok := syncer.unconfirmedCache[bonded.GetAbstractTransaction().Hash]; ok {
 				go pushResult(meta.resultCh, &AggregatedAddedResult{
 					tx: bonded,
@@ -188,7 +204,7 @@ func (syncer *transactionSyncer) dispatcherLoop() {
 				// Unhandled transaction received, saving to cache...
 				syncer.unsignedCache[bonded.GetAbstractTransaction().Hash] = bonded
 			}
-		case cosignature := <-syncer.cosigners.Ch:
+		case cosignature := <-syncer.cosignatureChanel:
 			if meta, ok := syncer.unconfirmedCache[cosignature.ParentHash]; ok {
 				go pushResult(meta.resultCh, &CoSignatureResult{
 					txHash:    cosignature.ParentHash,
@@ -196,7 +212,7 @@ func (syncer *transactionSyncer) dispatcherLoop() {
 					signature: cosignature.Signature,
 				}, false)
 			}
-		case unconfirmed := <-syncer.unconfirmed.Ch:
+		case unconfirmed := <-syncer.unconfirmedAddedChanel:
 			if meta, ok := syncer.unconfirmedCache[unconfirmed.GetAbstractTransaction().Hash]; ok {
 				meta.unconfirmed = true
 				go pushResult(meta.resultCh, &UnconfirmedResult{
@@ -399,9 +415,13 @@ func (syncer *transactionSyncer) UnCosignedTransactions() []*sdk.AggregateTransa
 func (syncer *transactionSyncer) Close() (err error) {
 	syncer.cancel()
 
-	err = syncer.confirmed.Unsubscribe()
-	err = syncer.status.Unsubscribe()
-	err = syncer.bonded.Unsubscribe()
+	close(syncer.statusChanel)
+	close(syncer.confirmedAddedChanel)
+	close(syncer.unconfirmedAddedChanel)
+	close(syncer.cosignatureChanel)
+	close(syncer.partialAddedChanel)
+
+	err = syncer.WSClient.Close()
 
 	return
 }

@@ -2,13 +2,15 @@ package catapult_sync
 
 import (
 	"context"
+	"github.com/proximax-storage/go-xpx-catapult-sdk/sdk/websocket"
+	"sync"
 	"time"
 
 	"github.com/proximax-storage/go-xpx-catapult-sdk/sdk"
 )
 
-// TODO Get Config from client
-func Announce(ctx context.Context, config *sdk.Config, client *sdk.ClientWebsocket, from *sdk.Account, tx sdk.Transaction, opts ...AnnounceOption) error {
+// Announce announces transaction, waits till it confirmed and returns error if any
+func Announce(ctx context.Context, config *sdk.Config, client websocket.CatapultClient, from *sdk.Account, tx sdk.Transaction, opts ...AnnounceOption) error {
 	syncer, err := NewTransactionSyncer(ctx, config, from, WithWsClient(client))
 	if err != nil {
 		return err
@@ -17,6 +19,29 @@ func Announce(ctx context.Context, config *sdk.Config, client *sdk.ClientWebsock
 	defer syncer.Close()
 
 	return AnnounceFullSync(ctx, syncer, tx, opts...)
+}
+
+// AnnounceMany announces transactions, waits till they all confirmed and returns error if any
+func AnnounceMany(ctx context.Context, config *sdk.Config, client websocket.CatapultClient, from *sdk.Account, txs []sdk.Transaction, opts ...AnnounceOption) error {
+	syncer, err := NewTransactionSyncer(ctx, config, from, WithWsClient(client))
+	if err != nil {
+		return err
+	}
+
+	defer syncer.Close()
+
+	wg := new(sync.WaitGroup)
+	for _, tx := range txs {
+		wg.Add(1)
+		go func(tx sdk.Transaction) {
+			defer wg.Done()
+			err = AnnounceFullSync(ctx, syncer, tx, opts...)
+		}(tx)
+	}
+
+	wg.Wait()
+
+	return err
 }
 
 // AnnounceFullSync fully synchronise work with Syncer and handles all the incoming Results

@@ -8,6 +8,7 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/proximax-storage/go-xpx-catapult-sdk/sdk"
+	"github.com/proximax-storage/go-xpx-catapult-sdk/sdk/websocket"
 )
 
 // Change those values if needed depending on the catapult version and used consensus
@@ -62,13 +63,13 @@ type AnnounceOption func(*announceConfig)
 
 // Syncer configuration
 type syncerConfig struct {
-	wsClient          *sdk.ClientWebsocket
-	сlient            *sdk.Client
+	wsClient          websocket.CatapultClient
+	client            *sdk.Client
 	connectionTimeout time.Duration
 	gcTimeout         time.Duration
 }
 
-func WithWsClient(client *sdk.ClientWebsocket) SyncerOption {
+func WithWsClient(client websocket.CatapultClient) SyncerOption {
 	return func(config *syncerConfig) {
 		config.wsClient = client
 	}
@@ -77,7 +78,7 @@ func WithWsClient(client *sdk.ClientWebsocket) SyncerOption {
 // WithHttpClient option configures Catapult SDK client to work with passed one
 func WithClient(client *sdk.Client) SyncerOption {
 	return func(config *syncerConfig) {
-		config.сlient = client
+		config.client = client
 	}
 }
 

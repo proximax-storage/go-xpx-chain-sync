@@ -9,11 +9,11 @@ import (
 	"github.com/proximax-storage/go-xpx-catapult-sdk/sdk"
 )
 
-// Announce announces transaction, waits till it confirmed and returns error if any
-func Announce(ctx context.Context, config *sdk.Config, client websocket.CatapultClient, from *sdk.Account, tx sdk.Transaction, opts ...AnnounceOption) error {
+// Announce announces transaction, waits till it confirmed and returns hash or error if any
+func Announce(ctx context.Context, config *sdk.Config, client websocket.CatapultClient, from *sdk.Account, tx sdk.Transaction, opts ...AnnounceOption) (*ConfirmationResult, error) {
 	syncer, err := NewTransactionSyncer(ctx, config, from, WithWsClient(client))
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	defer syncer.Close()
@@ -21,11 +21,11 @@ func Announce(ctx context.Context, config *sdk.Config, client websocket.Catapult
 	return AnnounceFullSync(ctx, syncer, tx, opts...)
 }
 
-// AnnounceMany announces transactions, waits till they all confirmed and returns error if any
-func AnnounceMany(ctx context.Context, config *sdk.Config, client websocket.CatapultClient, from *sdk.Account, txs []sdk.Transaction, opts ...AnnounceOption) error {
+// AnnounceMany announces transactions, waits till they all confirmed and returns hashes or error for every
+func AnnounceMany(ctx context.Context, config *sdk.Config, client websocket.CatapultClient, from *sdk.Account, txs []sdk.Transaction, opts ...AnnounceOption) ([]*ConfirmationResult, error) {
 	syncer, err := NewTransactionSyncer(ctx, config, from, WithWsClient(client))
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	defer syncer.Close()
@@ -35,7 +35,7 @@ func AnnounceMany(ctx context.Context, config *sdk.Config, client websocket.Cata
 
 // AnnounceFullSync fully synchronise work with Syncer and handles all the incoming Results
 // Also it is a reference on how to handle Results for different manipulation and for any kind of business logic.
-func AnnounceFullSync(ctx context.Context, syncer TransactionSyncer, tx sdk.Transaction, opts ...AnnounceOption) error {
+func AnnounceFullSync(ctx context.Context, syncer TransactionSyncer, tx sdk.Transaction, opts ...AnnounceOption) (*ConfirmationResult, error) {
 	var timeout time.Duration
 
 	isAggregated := tx.GetAbstractTransaction().Type == sdk.AggregateBonded
@@ -56,27 +56,31 @@ func AnnounceFullSync(ctx context.Context, syncer TransactionSyncer, tx sdk.Tran
 			switch res.(type) {
 			case *AnnounceResult:
 				if res.Err() != nil {
-					return res.Err()
+					return nil, res.Err()
 				}
 			case *ConfirmationResult:
-				return res.Err()
+				return res.(*ConfirmationResult), nil
 			}
 		case <-timer.C:
-			return ErrCatapultTimeout
+			return nil, ErrCatapultTimeout
 		case <-ctx.Done():
-			return ctx.Err()
+			return nil, ctx.Err()
 		}
 	}
 }
 
-func AnnounceFullSyncMany(ctx context.Context, syncer TransactionSyncer, txs []sdk.Transaction, opts ...AnnounceOption) (err error) {
+// AnnounceFullSyncMany announces and waits till success or error for every transaction
+// returns slices of hashes and errors with results of announcing
+func AnnounceFullSyncMany(ctx context.Context, syncer TransactionSyncer, txs []sdk.Transaction, opts ...AnnounceOption) (results []*ConfirmationResult, err error) {
+	results = make([]*ConfirmationResult, len(txs))
+
 	wg := new(sync.WaitGroup)
-	for _, tx := range txs {
+	for i, tx := range txs {
 		wg.Add(1)
-		go func(tx sdk.Transaction) {
+		go func(i int, tx sdk.Transaction) {
 			defer wg.Done()
-			err = AnnounceFullSync(ctx, syncer, tx, opts...)
-		}(tx)
+			results[i], err = AnnounceFullSync(ctx, syncer, tx, opts...)
+		}(i, tx)
 	}
 
 	wg.Wait()

@@ -52,7 +52,8 @@ func TestTransactionSyncer_AnnounceMany(t *testing.T) {
 		txs[i] = tx
 	}
 
-	assert.Nil(t, AnnounceFullSyncMany(ctx, syncer, txs))
+	_, err := AnnounceFullSyncMany(ctx, syncer, txs)
+	assert.Nil(t, err)
 }
 
 func TestTransactionSyncer_AnnounceFullSync_Transfer(t *testing.T) {
@@ -242,5 +243,13 @@ func sendMosaic(ctx context.Context, syncer *transactionSyncer, acc *sdk.PublicA
 		return err
 	}
 
-	return AnnounceFullSync(ctx, syncer, tx)
+	res, err := AnnounceFullSync(ctx, syncer, tx)
+	if err != nil {
+		return err
+	}
+	if res.err != nil {
+		return res.err
+	}
+
+	return nil
 }

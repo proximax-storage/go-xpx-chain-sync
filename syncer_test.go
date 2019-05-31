@@ -212,7 +212,7 @@ func prepareAccounts(ctx context.Context) error {
 }
 
 func newSyncer(ctx context.Context, url string, network sdk.NetworkType, key string) (*transactionSyncer, error) {
-	cfg, err := sdk.NewConfig(url, network)
+	cfg, err := sdk.NewConfig([]string{url}, network, sdk.WebsocketReconnectionDefaultTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -230,7 +230,7 @@ func newSyncer(ctx context.Context, url string, network sdk.NetworkType, key str
 	return syncer.(*transactionSyncer), err
 }
 
-func sendMosaic(ctx context.Context, syncer *transactionSyncer, acc *sdk.PublicAccount, mosaic *sdk.Mosaic, message *sdk.Message) error {
+func sendMosaic(ctx context.Context, syncer *transactionSyncer, acc *sdk.PublicAccount, mosaic *sdk.Mosaic, message sdk.Message) error {
 	tx, err := sdk.NewTransferTransaction(
 		sdk.NewDeadline(time.Hour),
 		acc.Address,

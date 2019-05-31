@@ -177,6 +177,15 @@ func (syncer *transactionSyncer) dispatcherLoop() {
 		delete(syncer.unconfirmedCache, meta.hash)
 	}
 
+	getAbstract := func(tx sdk.Transaction) *sdk.AbstractTransaction {
+		atx := tx.GetAbstractTransaction()
+		if tx != nil {
+			return atx
+		}
+
+		panic("Serialization error")
+	}
+
 	for {
 		select {
 
@@ -190,19 +199,21 @@ func (syncer *transactionSyncer) dispatcherLoop() {
 				metaGc(meta, &ConfirmationResult{err: errors.New(status.Status)}) // TODO Introduce new error type with all possible Catapult errors
 			}
 		case confirmed := <-syncer.confirmedAddedChanel:
-			if meta, ok := syncer.unconfirmedCache[confirmed.GetAbstractTransaction().Hash]; ok {
+			tx := getAbstract(confirmed)
+			if meta, ok := syncer.unconfirmedCache[tx.Hash]; ok {
 				metaGc(meta, &ConfirmationResult{tx: confirmed})
 			}
 
 			delete(syncer.unsignedCache, confirmed.GetAbstractTransaction().Hash)
 		case bonded := <-syncer.partialAddedChanel:
-			if meta, ok := syncer.unconfirmedCache[bonded.GetAbstractTransaction().Hash]; ok {
+			tx := getAbstract(bonded)
+			if meta, ok := syncer.unconfirmedCache[tx.Hash]; ok {
 				go pushResult(meta.resultCh, &AggregatedAddedResult{
 					tx: bonded,
 				}, false)
 			} else {
 				// Unhandled transaction received, saving to cache...
-				syncer.unsignedCache[bonded.GetAbstractTransaction().Hash] = bonded
+				syncer.unsignedCache[tx.Hash] = bonded
 			}
 		case cosignature := <-syncer.cosignatureChanel:
 			if meta, ok := syncer.unconfirmedCache[cosignature.ParentHash]; ok {
@@ -213,7 +224,8 @@ func (syncer *transactionSyncer) dispatcherLoop() {
 				}, false)
 			}
 		case unconfirmed := <-syncer.unconfirmedAddedChanel:
-			if meta, ok := syncer.unconfirmedCache[unconfirmed.GetAbstractTransaction().Hash]; ok {
+			tx := getAbstract(unconfirmed)
+			if meta, ok := syncer.unconfirmedCache[tx.Hash]; ok {
 				meta.unconfirmed = true
 				go pushResult(meta.resultCh, &UnconfirmedResult{
 					tx: unconfirmed,

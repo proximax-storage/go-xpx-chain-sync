@@ -295,11 +295,6 @@ func (sync *transactionSyncer) dispatcherLoop() {
 
 			sync.unconfirmedCache = nil
 			sync.unsignedCache = nil
-			close(sync.statusChanel)
-			close(sync.confirmedAddedChanel)
-			close(sync.unconfirmedAddedChanel)
-			close(sync.cosignatureChanel)
-			close(sync.partialAddedChanel)
 
 			return
 		}

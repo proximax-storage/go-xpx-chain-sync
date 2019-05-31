@@ -433,8 +433,6 @@ func (syncer *transactionSyncer) Close() (err error) {
 	close(syncer.cosignatureChanel)
 	close(syncer.partialAddedChanel)
 
-	err = syncer.WSClient.Close()
-
 	return
 }
 

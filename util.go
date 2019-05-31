@@ -30,18 +30,7 @@ func AnnounceMany(ctx context.Context, config *sdk.Config, client websocket.Cata
 
 	defer syncer.Close()
 
-	wg := new(sync.WaitGroup)
-	for _, tx := range txs {
-		wg.Add(1)
-		go func(tx sdk.Transaction) {
-			defer wg.Done()
-			err = AnnounceFullSync(ctx, syncer, tx, opts...)
-		}(tx)
-	}
-
-	wg.Wait()
-
-	return err
+	return AnnounceFullSyncMany(ctx, syncer, txs, opts...)
 }
 
 // AnnounceFullSync fully synchronise work with Syncer and handles all the incoming Results
@@ -78,4 +67,19 @@ func AnnounceFullSync(ctx context.Context, syncer TransactionSyncer, tx sdk.Tran
 			return ctx.Err()
 		}
 	}
+}
+
+func AnnounceFullSyncMany(ctx context.Context, syncer TransactionSyncer, txs []sdk.Transaction, opts ...AnnounceOption) (err error) {
+	wg := new(sync.WaitGroup)
+	for _, tx := range txs {
+		wg.Add(1)
+		go func(tx sdk.Transaction) {
+			defer wg.Done()
+			err = AnnounceFullSync(ctx, syncer, tx, opts...)
+		}(tx)
+	}
+
+	wg.Wait()
+
+	return
 }

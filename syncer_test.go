@@ -12,10 +12,10 @@ import (
 	"github.com/proximax-storage/go-xpx-catapult-sdk/sdk"
 )
 
-const TestUrl = "http://54.188.125.153:3000"
-const NetworkType = sdk.MijinTest
+const TestUrl = "http://bcstage1.xpxsirius.io:3000"
+const NetworkType = sdk.PublicTest
 
-const MainPrivateKey = "28FCECEA252231D2C86E1BCF7DD541552BDBBEFBB09324758B3AC199B4AA7B78"
+const MainPrivateKey = "349FB8AC38C9C4BD393B2E90E2CAB4ECBFA4E8088A6D840075BDEA1E22259956"
 const DefaultBalance = 5000000000000
 
 var PrivateKeys = []string{
@@ -33,45 +33,36 @@ var PrivateKeys = []string{
 
 var syncer, _ = newSyncer(context.Background(), TestUrl, NetworkType, MainPrivateKey)
 
-// Prepare account for tests
-func TestBlockChain_PrepareAccounts(t *testing.T) {
+func TestTransactionSyncer_AnnounceMany(t *testing.T) {
 	ctx := context.Background()
 
-	// Check amount of xpx for each account.
-	// If amount lower than DefaultBalance, then we send DefaultBalance to account
-	for _, privateKey := range PrivateKeys {
+	txs := make([]sdk.Transaction, len(PrivateKeys))
+	for i, key := range PrivateKeys {
+		acc, _ := sdk.NewAccountFromPrivateKey(key, syncer.Network)
 
-		acc, err := sdk.NewAccountFromPrivateKey(privateKey, syncer.Network)
+		tx, err := sdk.NewTransferTransaction(
+			sdk.NewDeadline(time.Hour),
+			acc.Address,
+			[]*sdk.Mosaic{sdk.XpxRelative(1)},
+			sdk.NewPlainMessage(""),
+			syncer.Network,
+		)
 		assert.Nil(t, err)
 
-		// Account can not exist, so we skip the error
-		accountInfo, err := syncer.Client.Account.GetAccountInfo(ctx, acc.PublicAccount.Address)
-
-		var amount uint64 = 0
-
-		if accountInfo != nil {
-			for _, mosaic := range accountInfo.Mosaics {
-				if mosaic.MosaicId.String() == sdk.XpxMosaicId.String() {
-					amount = mosaic.Amount.Uint64()
-				}
-			}
-		}
-
-		if amount < DefaultBalance {
-			err := sendMosaic(
-				ctx,
-				syncer,
-				acc.PublicAccount,
-				sdk.Xpx(DefaultBalance),
-				sdk.NewPlainMessage("Add mosaic to test account"))
-
-			assert.Nil(t, err)
-		}
+		txs[i] = tx
 	}
+
+	assert.Nil(t, AnnounceFullSyncMany(ctx, syncer, txs))
 }
 
 func TestTransactionSyncer_AnnounceFullSync_Transfer(t *testing.T) {
 	ctx := context.Background()
+
+	err := prepareAccounts(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	acc, err := sdk.NewAccountFromPrivateKey(PrivateKeys[2], syncer.Network)
 	assert.Nil(t, err)
 
@@ -86,6 +77,12 @@ func TestTransactionSyncer_AnnounceFullSync_Transfer(t *testing.T) {
 
 func TestTransactionSyncer_AnnounceFullSync_Bonded(t *testing.T) {
 	ctx := context.Background()
+
+	err := prepareAccounts(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	acc, err := sdk.NewAccountFromPrivateKey(PrivateKeys[2], syncer.Network)
 	assert.Nil(t, err)
 
@@ -170,6 +167,48 @@ loop:
 			assert.FailNow(t, "timeout exceeded")
 		}
 	}
+}
+
+// Prepare account for tests
+func prepareAccounts(ctx context.Context) error {
+	// Check amount of xpx for each account.
+	// If amount lower than DefaultBalance, then we send DefaultBalance to account
+	for _, privateKey := range PrivateKeys {
+
+		acc, err := sdk.NewAccountFromPrivateKey(privateKey, syncer.Network)
+		if err != nil {
+			return err
+		}
+
+		// Account can not exist, so we skip the error
+		accountInfo, err := syncer.Client.Account.GetAccountInfo(ctx, acc.PublicAccount.Address)
+
+		var amount uint64 = 0
+
+		if accountInfo != nil {
+			for _, mosaic := range accountInfo.Mosaics {
+				if mosaic.MosaicId.String() == sdk.XpxMosaicId.String() {
+					amount = mosaic.Amount.Uint64()
+				}
+			}
+		}
+
+		if amount < DefaultBalance {
+			err := sendMosaic(
+				ctx,
+				syncer,
+				acc.PublicAccount,
+				sdk.Xpx(DefaultBalance),
+				sdk.NewPlainMessage("Add mosaic to test account"))
+
+			if err != nil {
+				return err
+			}
+
+		}
+	}
+
+	return nil
 }
 
 func newSyncer(ctx context.Context, url string, network sdk.NetworkType, key string) (*transactionSyncer, error) {

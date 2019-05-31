@@ -65,25 +65,37 @@ func AnnounceFullSync(ctx context.Context, syncer TransactionSyncer, tx sdk.Tran
 			return nil, ErrCatapultTimeout
 		case <-ctx.Done():
 			return nil, ctx.Err()
+		case <-syncer.Context().Done():
+			return nil, syncer.Context().Err()
 		}
 	}
 }
 
 // AnnounceFullSyncMany announces and waits till success or error for every transaction
 // returns slices of hashes and errors with results of announcing
-func AnnounceFullSyncMany(ctx context.Context, syncer TransactionSyncer, txs []sdk.Transaction, opts ...AnnounceOption) (results []*ConfirmationResult, err error) {
-	results = make([]*ConfirmationResult, len(txs))
+func AnnounceFullSyncMany(ctx context.Context, syncer TransactionSyncer, txs []sdk.Transaction, opts ...AnnounceOption) ([]*ConfirmationResult, error) {
+	var (
+		errg error
+		once sync.Once
+		wg   sync.WaitGroup
+	)
 
-	wg := new(sync.WaitGroup)
+	results := make([]*ConfirmationResult, len(txs))
 	for i, tx := range txs {
 		wg.Add(1)
 		go func(i int, tx sdk.Transaction) {
 			defer wg.Done()
+			var err error
 			results[i], err = AnnounceFullSync(ctx, syncer, tx, opts...)
+			if err != nil {
+				once.Do(func() {
+					errg = err
+				})
+			}
 		}(i, tx)
 	}
 
 	wg.Wait()
 
-	return
+	return results, errg
 }

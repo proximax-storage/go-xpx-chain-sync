@@ -33,7 +33,7 @@ var PrivateKeys = []string{
 
 var syncer, _ = newSyncer(context.Background(), TestUrl, NetworkType, MainPrivateKey)
 
-func TestTransactionSyncer_AnnounceMany(t *testing.T) {
+func TestTransactionSyncer_AnnounceFullSyncMany(t *testing.T) {
 	ctx := context.Background()
 
 	txs := make([]sdk.Transaction, len(PrivateKeys))

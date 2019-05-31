@@ -27,8 +27,9 @@ type TransactionSyncer interface {
 	io.Closer
 
 	transactionAnnouncer
-
 	transactionCache
+
+	Context() context.Context
 }
 
 type transactionAnnouncer interface {

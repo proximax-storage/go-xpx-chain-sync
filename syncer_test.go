@@ -188,7 +188,7 @@ func prepareAccounts(ctx context.Context) error {
 
 		if accountInfo != nil {
 			for _, mosaic := range accountInfo.Mosaics {
-				if mosaic.BlockchainId.Equals(sdk.XpxMosaicId) {
+				if mosaic.AssetId.Equals(sdk.XpxMosaicId) {
 					amount = uint64(mosaic.Amount)
 				}
 			}

@@ -3,7 +3,6 @@ package catapult_sync
 import (
 	"context"
 	"github.com/proximax-storage/go-xpx-catapult-sdk/sdk/websocket"
-	"math/big"
 	"net/http"
 	"time"
 
@@ -498,7 +497,7 @@ func (sync *transactionSyncer) announceAggregateSync(ctx context.Context, tx *sd
 	return resultCh
 }
 
-func (sync *transactionSyncer) lockFundsSync(ctx context.Context, amount, duration int64, deadline time.Duration, signedTx *sdk.SignedTransaction) error {
+func (sync *transactionSyncer) lockFundsSync(ctx context.Context, amount uint64, duration int64, deadline time.Duration, signedTx *sdk.SignedTransaction) error {
 	if amount < 10 {
 		return errors.New("lock amount have to be bigger than 10")
 	}
@@ -506,7 +505,7 @@ func (sync *transactionSyncer) lockFundsSync(ctx context.Context, amount, durati
 	lockTx, err := sdk.NewLockFundsTransaction(
 		sdk.NewDeadline(deadline),
 		sdk.XpxRelative(amount),
-		big.NewInt(duration),
+		sdk.Duration(duration),
 		signedTx,
 		sync.Network,
 	)

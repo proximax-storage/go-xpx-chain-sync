@@ -101,7 +101,7 @@ func GCTimeout(timeout time.Duration) SyncerOption {
 type announceConfig struct {
 	lockDuration int64
 	lockDeadline time.Duration
-	lockAmount   int64
+	lockAmount   uint64
 }
 
 func LockDuration(duration int64) AnnounceOption {
@@ -116,7 +116,7 @@ func LockDeadline(deadline time.Duration) AnnounceOption {
 	}
 }
 
-func LockAmount(amount int64) AnnounceOption {
+func LockAmount(amount uint64) AnnounceOption {
 	return func(config *announceConfig) {
 		config.lockAmount = amount
 	}

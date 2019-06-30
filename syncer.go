@@ -513,12 +513,11 @@ func (sync *transactionSyncer) lockFundsSync(ctx context.Context, amount uint64,
 		return errors.New("lock amount have to be bigger than 10")
 	}
 
-	lockTx, err := sdk.NewLockFundsTransaction(
+	lockTx, err := sync.Client.NewLockFundsTransaction(
 		sdk.NewDeadline(deadline),
 		sdk.XpxRelative(amount),
 		sdk.Duration(duration),
 		signedTx,
-		sync.Client.NetworkType(),
 	)
 	if err != nil {
 		return err

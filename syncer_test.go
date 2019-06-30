@@ -42,12 +42,11 @@ func TestTransactionSyncer_AnnounceFullSyncMany(t *testing.T) {
 	for i, key := range PrivateKeys {
 		acc, _ := syncer.Client.NewAccountFromPrivateKey(key)
 
-		tx, err := sdk.NewTransferTransaction(
+		tx, err := syncer.Client.NewTransferTransaction(
 			sdk.NewDeadline(time.Hour),
 			acc.Address,
 			[]*sdk.Mosaic{sdk.XpxRelative(1)},
 			sdk.NewPlainMessage(""),
-			syncer.Client.NetworkType(),
 		)
 		assert.Nil(t, err)
 
@@ -89,31 +88,28 @@ func TestTransactionSyncer_AnnounceFullSync_Bonded(t *testing.T) {
 	acc, err := syncer.Client.NewAccountFromPrivateKey(PrivateKeys[2])
 	assert.Nil(t, err)
 
-	tx1, _ := sdk.NewTransferTransaction(
+	tx1, _ := syncer.Client.NewTransferTransaction(
 		sdk.NewDeadline(time.Hour),
 		syncer.Account.PublicAccount.Address,
 		[]*sdk.Mosaic{sdk.XpxRelative(10)},
 		sdk.NewPlainMessage("tx1"),
-		syncer.Client.NetworkType(),
 	)
 	tx1.ToAggregate(acc.PublicAccount)
 
-	tx2, _ := sdk.NewTransferTransaction(
+	tx2, _ := syncer.Client.NewTransferTransaction(
 		sdk.NewDeadline(time.Hour),
 		acc.PublicAccount.Address,
 		[]*sdk.Mosaic{sdk.XpxRelative(20)},
 		sdk.NewPlainMessage("tx2"),
-		syncer.Client.NetworkType(),
 	)
 	tx2.ToAggregate(syncer.Account.PublicAccount)
 
-	aTx, _ := sdk.NewBondedAggregateTransaction(
+	aTx, _ := syncer.Client.NewBondedAggregateTransaction(
 		sdk.NewDeadline(time.Hour),
 		[]sdk.Transaction{
 			tx1,
 			tx2,
 		},
-		syncer.Client.NetworkType(),
 	)
 
 	results := syncer.AnnounceSync(ctx, aTx)
@@ -234,12 +230,11 @@ func newSyncer(ctx context.Context, url string, privateKey string) (*transaction
 }
 
 func sendMosaic(ctx context.Context, syncer *transactionSyncer, acc *sdk.PublicAccount, mosaic *sdk.Mosaic, message sdk.Message) error {
-	tx, err := sdk.NewTransferTransaction(
+	tx, err := syncer.Client.NewTransferTransaction(
 		sdk.NewDeadline(time.Hour),
 		acc.Address,
 		[]*sdk.Mosaic{mosaic},
 		message,
-		syncer.Client.NetworkType(),
 	)
 	if err != nil {
 		return err

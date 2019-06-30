@@ -12,10 +12,12 @@ import (
 	"github.com/proximax-storage/go-xpx-catapult-sdk/sdk"
 )
 
-const TestUrl = "http://bcstage1.xpxsirius.io:3000"
-const NetworkType = sdk.PublicTest
+//const TestUrl = "http://bcstage1.xpxsirius.io:3000"
+//const MainPrivateKey = "349FB8AC38C9C4BD393B2E90E2CAB4ECBFA4E8088A6D840075BDEA1E22259956"
 
-const MainPrivateKey = "349FB8AC38C9C4BD393B2E90E2CAB4ECBFA4E8088A6D840075BDEA1E22259956"
+const TestUrl = "http://127.0.0.1:3000"
+const MainPrivateKey = "A31411BC4BA7267147DBBEDC034FA3D3C0B7294A0784507539C3BCE4EF70615A"
+
 const DefaultBalance = 5000000000000
 
 var PrivateKeys = []string{
@@ -31,21 +33,21 @@ var PrivateKeys = []string{
 	"BE438E3273E9E7E065AC7FC6D7ED6B13C6360461F26820E39989EFA8ED77B0B0",
 }
 
-var syncer, _ = newSyncer(context.Background(), TestUrl, NetworkType, MainPrivateKey)
+var syncer, _ = newSyncer(context.Background(), TestUrl, MainPrivateKey)
 
 func TestTransactionSyncer_AnnounceFullSyncMany(t *testing.T) {
 	ctx := context.Background()
 
 	txs := make([]sdk.Transaction, len(PrivateKeys))
 	for i, key := range PrivateKeys {
-		acc, _ := sdk.NewAccountFromPrivateKey(key, syncer.Network)
+		acc, _ := syncer.Client.NewAccountFromPrivateKey(key)
 
 		tx, err := sdk.NewTransferTransaction(
 			sdk.NewDeadline(time.Hour),
 			acc.Address,
 			[]*sdk.Mosaic{sdk.XpxRelative(1)},
 			sdk.NewPlainMessage(""),
-			syncer.Network,
+			syncer.Client.NetworkType(),
 		)
 		assert.Nil(t, err)
 
@@ -64,7 +66,7 @@ func TestTransactionSyncer_AnnounceFullSync_Transfer(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	acc, err := sdk.NewAccountFromPrivateKey(PrivateKeys[2], syncer.Network)
+	acc, err := syncer.Client.NewAccountFromPrivateKey(PrivateKeys[2])
 	assert.Nil(t, err)
 
 	err = sendMosaic(
@@ -84,7 +86,7 @@ func TestTransactionSyncer_AnnounceFullSync_Bonded(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	acc, err := sdk.NewAccountFromPrivateKey(PrivateKeys[2], syncer.Network)
+	acc, err := syncer.Client.NewAccountFromPrivateKey(PrivateKeys[2])
 	assert.Nil(t, err)
 
 	tx1, _ := sdk.NewTransferTransaction(
@@ -92,7 +94,7 @@ func TestTransactionSyncer_AnnounceFullSync_Bonded(t *testing.T) {
 		syncer.Account.PublicAccount.Address,
 		[]*sdk.Mosaic{sdk.XpxRelative(10)},
 		sdk.NewPlainMessage("tx1"),
-		syncer.Network,
+		syncer.Client.NetworkType(),
 	)
 	tx1.ToAggregate(acc.PublicAccount)
 
@@ -101,7 +103,7 @@ func TestTransactionSyncer_AnnounceFullSync_Bonded(t *testing.T) {
 		acc.PublicAccount.Address,
 		[]*sdk.Mosaic{sdk.XpxRelative(20)},
 		sdk.NewPlainMessage("tx2"),
-		syncer.Network,
+		syncer.Client.NetworkType(),
 	)
 	tx2.ToAggregate(syncer.Account.PublicAccount)
 
@@ -111,7 +113,7 @@ func TestTransactionSyncer_AnnounceFullSync_Bonded(t *testing.T) {
 			tx1,
 			tx2,
 		},
-		syncer.Network,
+		syncer.Client.NetworkType(),
 	)
 
 	results := syncer.AnnounceSync(ctx, aTx)
@@ -176,7 +178,7 @@ func prepareAccounts(ctx context.Context) error {
 	// If amount lower than DefaultBalance, then we send DefaultBalance to account
 	for _, privateKey := range PrivateKeys {
 
-		acc, err := sdk.NewAccountFromPrivateKey(privateKey, syncer.Network)
+		acc, err := syncer.Client.NewAccountFromPrivateKey(privateKey)
 		if err != nil {
 			return err
 		}
@@ -212,13 +214,13 @@ func prepareAccounts(ctx context.Context) error {
 	return nil
 }
 
-func newSyncer(ctx context.Context, url string, network sdk.NetworkType, key string) (*transactionSyncer, error) {
-	cfg, err := sdk.NewConfig([]string{url}, network, sdk.WebsocketReconnectionDefaultTimeout)
+func newSyncer(ctx context.Context, url string, privateKey string) (*transactionSyncer, error) {
+	cfg, err := sdk.NewDefaultConfig([]string{url})
 	if err != nil {
 		return nil, err
 	}
 
-	acc, err := sdk.NewAccountFromPrivateKey(key, network)
+	acc, err := sdk.NewAccountFromPrivateKey(privateKey, sdk.NotSupportedNet, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -237,7 +239,7 @@ func sendMosaic(ctx context.Context, syncer *transactionSyncer, acc *sdk.PublicA
 		acc.Address,
 		[]*sdk.Mosaic{mosaic},
 		message,
-		syncer.Network,
+		syncer.Client.NetworkType(),
 	)
 	if err != nil {
 		return err

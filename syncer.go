@@ -58,7 +58,6 @@ func NewTransactionSyncer(ctx context.Context, config *sdk.Config, acc *sdk.Acco
 	cfg := &syncerConfig{
 		connectionTimeout: defConnTimeout,
 		gcTimeout:         defGCTimeout,
-		getConfigFromRest: true,
 	}
 
 	for _, opt := range opts {
@@ -99,16 +98,9 @@ func NewTransactionSyncer(ctx context.Context, config *sdk.Config, acc *sdk.Acco
 		syncer.Client = cfg.client
 	}
 
-	if cfg.getConfigFromRest {
-		err = syncer.Client.SetupConfigFromRest(ctx)
-		if err != nil {
-			return nil, err
-		}
-
-		syncer.Account, err = syncer.Client.AdaptAccount(acc)
-		if err != nil {
-			return nil, err
-		}
+	syncer.Account, err = syncer.Client.AdaptAccount(acc)
+	if err != nil {
+		return nil, err
 	}
 
 	go syncer.WSClient.Listen()

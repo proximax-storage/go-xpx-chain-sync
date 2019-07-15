@@ -20,6 +20,8 @@ github.com/proximax-storage/go-xpx-catapult-sdk v0.0.0-20190630213411-e898e09d09
 github.com/proximax-storage/go-xpx-catapult-sdk v0.0.0-20190630213411-e898e09d09a2/go.mod h1:OSDLy1KvgHH8cPXHE/MEw+3oXaL9N9HTYhmd/NH4a5g=
 github.com/proximax-storage/go-xpx-catapult-sdk v0.0.0-20190630222935-81a5731f111f h1:yuQ1bMa4icBHYfP00iK3z+MpM8HcnYHCbYGV7QRIXPw=
 github.com/proximax-storage/go-xpx-catapult-sdk v0.0.0-20190630222935-81a5731f111f/go.mod h1:OSDLy1KvgHH8cPXHE/MEw+3oXaL9N9HTYhmd/NH4a5g=
+github.com/proximax-storage/go-xpx-catapult-sdk v0.0.0-20190714155650-78c4c16ece79 h1:b6qaiN0lEsgpBtPxgO/r2eu6mOhESuwbQeGR0RVFYFo=
+github.com/proximax-storage/go-xpx-catapult-sdk v0.0.0-20190714155650-78c4c16ece79/go.mod h1:OSDLy1KvgHH8cPXHE/MEw+3oXaL9N9HTYhmd/NH4a5g=
 github.com/proximax-storage/go-xpx-utils v0.0.0-20190604083640-90d06ff8a19f h1:/ll8hQJ1jfDreLorR4U1Vn6Z6UL8r+pd8mv4mYq7RUY=
 github.com/proximax-storage/go-xpx-utils v0.0.0-20190604083640-90d06ff8a19f/go.mod h1:++1dcQ6EiUK6Yqi5al5OO3QXZPR1y9mX03e5O2qawEw=
 github.com/proximax-storage/nem2-sdk-go v0.0.0-20190128134401-f3b97d8c1f63 h1:y0qyv3HK1N69ebIBVq2Reg94bgTRRsalKQ2jtFm4X10=

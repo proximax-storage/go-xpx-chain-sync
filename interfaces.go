@@ -66,7 +66,6 @@ type AnnounceOption func(*announceConfig)
 type syncerConfig struct {
 	wsClient          websocket.CatapultClient
 	client            *sdk.Client
-	getConfigFromRest bool
 	connectionTimeout time.Duration
 	gcTimeout         time.Duration
 }

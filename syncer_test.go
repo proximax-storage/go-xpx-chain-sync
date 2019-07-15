@@ -211,7 +211,7 @@ func prepareAccounts(ctx context.Context) error {
 }
 
 func newSyncer(ctx context.Context, url string, privateKey string) (*transactionSyncer, error) {
-	cfg, err := sdk.NewDefaultConfig([]string{url})
+	cfg, err := sdk.NewConfig(ctx, []string{url})
 	if err != nil {
 		return nil, err
 	}

@@ -10,7 +10,7 @@ type AnnounceResult struct {
 	err       error
 }
 
-func (r *AnnounceResult) Hash() sdk.Hash {
+func (r *AnnounceResult) Hash() *sdk.Hash {
 	return r.signedTxn.Hash
 }
 
@@ -24,12 +24,12 @@ func (r *AnnounceResult) Tx() *sdk.SignedTransaction {
 
 // ConfirmationResult is a struct which shows result of transaction confirmation
 type ConfirmationResult struct {
-	hash sdk.Hash
+	hash *sdk.Hash
 	tx   sdk.Transaction
 	err  error
 }
 
-func (r *ConfirmationResult) Hash() sdk.Hash {
+func (r *ConfirmationResult) Hash() *sdk.Hash {
 	return r.hash
 }
 
@@ -46,8 +46,8 @@ type UnconfirmedResult struct {
 	tx sdk.Transaction
 }
 
-func (r *UnconfirmedResult) Hash() sdk.Hash {
-	return r.tx.GetAbstractTransaction().Hash
+func (r *UnconfirmedResult) Hash() *sdk.Hash {
+	return r.tx.GetAbstractTransaction().TransactionHash
 }
 
 func (r *UnconfirmedResult) Err() error {
@@ -60,12 +60,12 @@ func (r *UnconfirmedResult) Tx() sdk.Transaction {
 }
 
 type CoSignatureResult struct {
-	txHash    sdk.Hash
+	txHash    *sdk.Hash
 	signer    string
-	signature string
+	signature *sdk.Signature
 }
 
-func (r *CoSignatureResult) Hash() sdk.Hash {
+func (r *CoSignatureResult) Hash() *sdk.Hash {
 	return r.txHash
 }
 
@@ -78,7 +78,7 @@ func (r *CoSignatureResult) Signer() string {
 	return r.signer
 }
 
-func (r *CoSignatureResult) Signature() string {
+func (r *CoSignatureResult) Signature() *sdk.Signature {
 	return r.signature
 }
 
@@ -86,8 +86,8 @@ type AggregatedAddedResult struct {
 	tx *sdk.AggregateTransaction
 }
 
-func (r *AggregatedAddedResult) Hash() sdk.Hash {
-	return r.tx.Hash
+func (r *AggregatedAddedResult) Hash() *sdk.Hash {
+	return r.tx.TransactionHash
 }
 
 func (r *AggregatedAddedResult) Err() error {

@@ -33,19 +33,19 @@ type TransactionSyncer interface {
 }
 
 type transactionAnnouncer interface {
-	Sync(time.Time, sdk.Hash) <-chan Result
+	Sync(time.Time, *sdk.Hash) <-chan Result
 
 	Announce(ctx context.Context, tx sdk.Transaction) (*sdk.SignedTransaction, error)
 
 	AnnounceSync(ctx context.Context, tx sdk.Transaction, opts ...AnnounceOption) <-chan Result
 
-	CoSign(ctx context.Context, hash sdk.Hash, force bool) error
+	CoSign(ctx context.Context, hash *sdk.Hash, force bool) error
 }
 
 type transactionCache interface {
-	Unconfirmed() []sdk.Hash
+	Unconfirmed() []*sdk.Hash
 
-	UnCosignedTransaction(hash sdk.Hash) *sdk.AggregateTransaction
+	UnCosignedTransaction(hash *sdk.Hash) *sdk.AggregateTransaction
 
 	UnCosignedTransactions() []*sdk.AggregateTransaction
 }
@@ -54,7 +54,7 @@ type transactionCache interface {
 // If Err equals to nil then any kind of manipulation on transaction is successful.
 // TODO Change name to appropriate one
 type Result interface {
-	Hash() sdk.Hash
+	Hash() *sdk.Hash
 	Err() error
 }
 

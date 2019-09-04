@@ -2,11 +2,11 @@ package catapult_sync
 
 import (
 	"context"
-	"github.com/proximax-storage/go-xpx-catapult-sdk/sdk/websocket"
 	"sync"
 	"time"
 
-	"github.com/proximax-storage/go-xpx-catapult-sdk/sdk"
+	"github.com/proximax-storage/go-xpx-chain-sdk/sdk"
+	"github.com/proximax-storage/go-xpx-chain-sdk/sdk/websocket"
 )
 
 // Announce announces transaction, waits till it confirmed and returns hash or error if any

@@ -9,14 +9,14 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/proximax-storage/go-xpx-catapult-sdk/sdk"
+	"github.com/proximax-storage/go-xpx-chain-sdk/sdk"
 )
 
-//const TestUrl = "http://bcstage1.xpxsirius.io:3000"
-//const MainPrivateKey = "349FB8AC38C9C4BD393B2E90E2CAB4ECBFA4E8088A6D840075BDEA1E22259956"
+const TestUrl = "http://bcstage1.xpxsirius.io:3000"
+const MainPrivateKey = "349FB8AC38C9C4BD393B2E90E2CAB4ECBFA4E8088A6D840075BDEA1E22259956"
 
-const TestUrl = "http://127.0.0.1:3000"
-const MainPrivateKey = "A31411BC4BA7267147DBBEDC034FA3D3C0B7294A0784507539C3BCE4EF70615A"
+// const TestUrl = "http://127.0.0.1:3000"
+// const MainPrivateKey = "A31411BC4BA7267147DBBEDC034FA3D3C0B7294A0784507539C3BCE4EF70615A"
 
 const DefaultBalance = 5000000000000
 
@@ -186,7 +186,7 @@ func prepareAccounts(ctx context.Context) error {
 
 		if accountInfo != nil {
 			for _, mosaic := range accountInfo.Mosaics {
-				if mosaic.AssetId.Equals(sdk.XpxMosaicId) {
+				if mosaic.AssetId.Equals(sdk.XemNamespaceId) {
 					amount = uint64(mosaic.Amount)
 				}
 			}

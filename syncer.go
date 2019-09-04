@@ -2,13 +2,13 @@ package catapult_sync
 
 import (
 	"context"
-	"github.com/proximax-storage/go-xpx-catapult-sdk/sdk/websocket"
 	"net/http"
 	"time"
 
 	"github.com/pkg/errors"
 
-	"github.com/proximax-storage/go-xpx-catapult-sdk/sdk"
+	"github.com/proximax-storage/go-xpx-chain-sdk/sdk"
+	"github.com/proximax-storage/go-xpx-chain-sdk/sdk/websocket"
 )
 
 type transactionSyncer struct {

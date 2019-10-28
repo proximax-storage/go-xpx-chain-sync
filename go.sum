@@ -2,6 +2,8 @@ github.com/davecgh/go-spew v1.1.0 h1:ZDRjVQ15GmhC3fiQ8ni8+OwkZQO4DARzQgrnXU1Liz8
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/google/flatbuffers v1.10.0 h1:wHCM5N1xsJ3VwePcIpVqnmjAqRXlR44gv4hpGi+/LIw=
 github.com/google/flatbuffers v1.10.0/go.mod h1:1AeVuKshWv4vARoZatz6mlQ0JxURH0Kv5+zNeJKJCa8=
+github.com/google/flatbuffers v1.11.0 h1:O7CEyB8Cb3/DmtxODGtLHcEvpr81Jm5qLg/hsHnxA2A=
+github.com/google/flatbuffers v1.11.0/go.mod h1:1AeVuKshWv4vARoZatz6mlQ0JxURH0Kv5+zNeJKJCa8=
 github.com/google/go-querystring v1.0.0 h1:Xkwi/a1rcvNg1PPYe5vI8GbeBY/jrVuDX5ASuANWTrk=
 github.com/google/go-querystring v1.0.0/go.mod h1:odCYkC5MyYFN7vkCjXpyrEuKhc/BUO6wN/zVPAxq5ck=
 github.com/gorilla/websocket v1.4.0 h1:WDFjx/TMzVgy9VdMMQi2K2Emtwi2QcUQsztZ/zLaH/Q=
@@ -18,12 +20,16 @@ github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZb
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/proximax-storage/go-xpx-chain-sdk v0.5.0 h1:UVle/AEA9edwc4HcrJAUr2uCB0g6Pvb9U5wSCEVL+7s=
 github.com/proximax-storage/go-xpx-chain-sdk v0.5.0/go.mod h1:TgMhZ0Hvml08dUB9eTTafwys3RLo2Q7fru8eC/FqQzs=
+github.com/proximax-storage/go-xpx-chain-sdk v0.5.1-0.20191028143628-67c748da3153 h1:jxYnOO84teYLK9C0qU5k3IEPbyvyZ+AG4OewxuQnSRg=
+github.com/proximax-storage/go-xpx-chain-sdk v0.5.1-0.20191028143628-67c748da3153/go.mod h1:TMhNFF3bo3hpHLRTJ7Epy/6KIbvJN+IGPxwv0m5RXxE=
 github.com/proximax-storage/go-xpx-utils v0.0.0-20190604083640-90d06ff8a19f h1:/ll8hQJ1jfDreLorR4U1Vn6Z6UL8r+pd8mv4mYq7RUY=
 github.com/proximax-storage/go-xpx-utils v0.0.0-20190604083640-90d06ff8a19f/go.mod h1:++1dcQ6EiUK6Yqi5al5OO3QXZPR1y9mX03e5O2qawEw=
 github.com/proximax-storage/nem2-sdk-go v0.0.0-20190128134401-f3b97d8c1f63 h1:y0qyv3HK1N69ebIBVq2Reg94bgTRRsalKQ2jtFm4X10=
 github.com/proximax-storage/nem2-sdk-go v0.0.0-20190128134401-f3b97d8c1f63/go.mod h1:bTUWZWtoRHhTTqatPWwFCKNeAFDzA2jbA1kLidM0/Is=
 github.com/proximax-storage/xpx-crypto-go v0.0.0-20190522100024-6fcc9a816133 h1:Jq/PU6nACbqN/cUxE7c8xQ6P8G8Qbw7hnsCORpQ8F+Y=
 github.com/proximax-storage/xpx-crypto-go v0.0.0-20190522100024-6fcc9a816133/go.mod h1:xd4fXxVEd5V9GuWQwZb/A/FiHv4TkpGiRUocRJcwj+A=
+github.com/proximax-storage/xpx-crypto-go v0.0.0-20190523083438-1d0f3ef4b6e1 h1:qCI6Eg2gfm3OqTzvtvjdPfxz7cUjCGWdqabAiz/7284=
+github.com/proximax-storage/xpx-crypto-go v0.0.0-20190523083438-1d0f3ef4b6e1/go.mod h1:xd4fXxVEd5V9GuWQwZb/A/FiHv4TkpGiRUocRJcwj+A=
 github.com/stretchr/objx v0.1.0 h1:4G4v2dO3VZwixGIRoQ5Lfboy6nUhCyYzaqnIAPPhYs4=
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
 github.com/stretchr/testify v1.3.0 h1:TivCn/peBQ7UY8ooIcPgZFpTNSz0Q2U6UrFlUfqbe0Q=
@@ -36,5 +42,6 @@ golang.org/x/crypto v0.0.0-20190513172903-22d7a77e9e5f h1:R423Cnkcp5JABoeemiGEPl
 golang.org/x/crypto v0.0.0-20190513172903-22d7a77e9e5f/go.mod h1:yigFU9vqHzYiE8UmvKecakEJjdnWj3jj499lnFckfCI=
 golang.org/x/net v0.0.0-20190404232315-eb5bcb51f2a3/go.mod h1:t9HGtf8HONx5eT2rtn7q6eTqICYqUVnKs3thJo3Qplg=
 golang.org/x/sys v0.0.0-20190215142949-d0b11bdaac8a/go.mod h1:STP8DvDyc/dI5b8T5hshtkjS+E42TnysNCUPdjciGhY=
+golang.org/x/sys v0.0.0-20190412213103-97732733099d h1:+R4KGOnez64A81RvjARKc4UT5/tI9ujCIVX+P5KiHuI=
 golang.org/x/sys v0.0.0-20190412213103-97732733099d/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
 golang.org/x/text v0.3.0/go.mod h1:NqM8EUOU14njkJ3fqMW+pc6Ldnwhi/IjpwHt7yyuwOQ=

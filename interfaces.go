@@ -1,4 +1,4 @@
-package catapult_sync
+package chainsync
 
 import (
 	"context"

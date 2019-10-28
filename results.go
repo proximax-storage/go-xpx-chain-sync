@@ -1,4 +1,4 @@
-package catapult_sync
+package chainsync
 
 import (
 	"github.com/proximax-storage/go-xpx-chain-sdk/sdk"

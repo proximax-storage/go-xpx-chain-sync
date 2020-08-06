@@ -501,10 +501,6 @@ func (sync *transactionSyncer) announceAggregateSync(ctx context.Context, tx *sd
 }
 
 func (sync *transactionSyncer) lockFundsSync(ctx context.Context, amount uint64, duration int64, deadline time.Duration, signedTx *sdk.SignedTransaction) error {
-	if amount < 10 {
-		return errors.New("lock amount have to be bigger than 10")
-	}
-
 	lockTx, err := sync.Client.NewLockFundsTransaction(
 		sdk.NewDeadline(deadline),
 		sdk.XpxRelative(amount),

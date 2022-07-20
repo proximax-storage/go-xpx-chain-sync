@@ -38,7 +38,7 @@ func AnnounceMany(ctx context.Context, config *sdk.Config, client websocket.Cata
 func AnnounceFullSync(ctx context.Context, syncer TransactionSyncer, tx sdk.Transaction, opts ...AnnounceOption) (*ConfirmationResult, error) {
 	var timeout time.Duration
 
-	isAggregated := tx.GetAbstractTransaction().Type == sdk.AggregateBonded
+	isAggregated := tx.GetAbstractTransaction().Type == sdk.AggregateBondedV1 || tx.GetAbstractTransaction().Type == sdk.AggregateBondedV2
 	if isAggregated {
 		timeout = tx.GetAbstractTransaction().Deadline.Sub(time.Now())
 	} else {

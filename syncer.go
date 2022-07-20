@@ -24,12 +24,12 @@ type transactionSyncer struct {
 
 	statusChanel           chan *sdk.StatusInfo
 	confirmedAddedChanel   chan sdk.Transaction
-	partialAddedChanel     chan *sdk.AggregateTransaction
+	partialAddedChanel     chan sdk.Transaction
 	cosignatureChanel      chan *sdk.SignerInfo
 	unconfirmedAddedChanel chan sdk.Transaction
 
 	// Unsigned cache
-	unsignedCache map[sdk.Hash]*sdk.AggregateTransaction // contains all the aggregate transactions Syncer's account taking part in TODO Handle possible memory leak when transactions are not confirmed
+	unsignedCache map[sdk.Hash]sdk.Transaction // contains all the aggregate transactions Syncer's account taking part in TODO Handle possible memory leak when transactions are not confirmed
 	getUnsigned   chan *unsignedRequest
 
 	// Unconfirmed transactions cache and request channels
@@ -68,14 +68,14 @@ func NewTransactionSyncer(ctx context.Context, config *sdk.Config, acc *sdk.Acco
 		ctx:              ctx,
 		cancel:           cancel,
 		Account:          acc,
-		unsignedCache:    make(map[sdk.Hash]*sdk.AggregateTransaction),
+		unsignedCache:    make(map[sdk.Hash]sdk.Transaction),
 		getUnsigned:      make(chan *unsignedRequest),
 		unconfirmedCache: make(map[sdk.Hash]*transactionMeta),
 		newUnconfirmed:   make(chan *transactionMeta),
 
 		statusChanel:           make(chan *sdk.StatusInfo, 16),
 		confirmedAddedChanel:   make(chan sdk.Transaction, 16),
-		partialAddedChanel:     make(chan *sdk.AggregateTransaction, 16),
+		partialAddedChanel:     make(chan sdk.Transaction, 16),
 		cosignatureChanel:      make(chan *sdk.SignerInfo, 16),
 		unconfirmedAddedChanel: make(chan sdk.Transaction, 16),
 
@@ -140,7 +140,7 @@ func (sync *transactionSyncer) subscribe() (err error) {
 		return errors.Wrap(err, "adding confirmed added subscriber")
 	}
 
-	if err = sync.WSClient.AddPartialAddedHandlers(sync.Account.Address, func(tx *sdk.AggregateTransaction) bool {
+	if err = sync.WSClient.AddPartialAddedHandlers(sync.Account.Address, func(tx sdk.Transaction) bool {
 		if tx == nil {
 			// TODO Log that nil is passed
 			return false
@@ -258,7 +258,7 @@ func (sync *transactionSyncer) dispatcherLoop() {
 
 		// Value requests
 		case req := <-sync.getUnsigned:
-			var out []*sdk.AggregateTransaction
+			var out []sdk.Transaction
 
 			if req.hash != nil {
 				if hash, ok := sync.unsignedCache[*req.hash]; ok {
@@ -313,8 +313,8 @@ func (sync *transactionSyncer) Announce(ctx context.Context, tx sdk.Transaction)
 	if err != nil {
 		return nil, err
 	}
-
-	if tx.GetAbstractTransaction().Type == sdk.AggregateBonded {
+	transactionType := tx.GetAbstractTransaction().Type
+	if transactionType == sdk.AggregateBondedV1 || transactionType == sdk.AggregateBondedV2 {
 		_, err = sync.Client.Transaction.AnnounceAggregateBonded(ctx, signedTx)
 		if err != nil {
 			return signedTx, err
@@ -344,8 +344,11 @@ func (sync *transactionSyncer) AnnounceSync(ctx context.Context, tx sdk.Transact
 		return resultCh
 	}
 
-	if tx.GetAbstractTransaction().Type == sdk.AggregateBonded {
-		return sync.announceAggregateSync(ctx, tx.(*sdk.AggregateTransaction), opts...)
+	transactionType := tx.GetAbstractTransaction().Type
+	if transactionType == sdk.AggregateBondedV1 {
+		return sync.announceAggregateSync(ctx, tx.(*sdk.AggregateTransactionV1).Deadline, tx, opts...)
+	} else if transactionType == sdk.AggregateBondedV2 {
+		return sync.announceAggregateSync(ctx, tx.(*sdk.AggregateTransactionV2).Deadline, tx, opts...)
 	}
 
 	result.signedTxn, result.err = sync.Announce(ctx, tx)
@@ -424,12 +427,12 @@ func (sync *transactionSyncer) Unconfirmed() []*sdk.Hash { // TODO Return more i
 }
 
 // UnCosignedTransaction returns aggregate bonded transaction in which Syncer's account signature is requested.
-func (sync *transactionSyncer) UnCosignedTransaction(hash *sdk.Hash) *sdk.AggregateTransaction {
+func (sync *transactionSyncer) UnCosignedTransaction(hash *sdk.Hash) sdk.Transaction {
 	if hash == nil {
 		return nil
 	}
 
-	out := make(chan []*sdk.AggregateTransaction, 1)
+	out := make(chan []sdk.Transaction, 1)
 	sync.getUnsigned <- &unsignedRequest{resp: out, hash: hash}
 
 	if txs := <-out; txs != nil {
@@ -442,8 +445,8 @@ func (sync *transactionSyncer) UnCosignedTransaction(hash *sdk.Hash) *sdk.Aggreg
 // UnCosignedTransactions returns all aggregate bonded transactions in which Syncer's account is taking part
 // and where Syncer's co signature is needed to confirm transaction
 // NOTICE: Handles only those transactions which are requested when Syncer is active
-func (sync *transactionSyncer) UnCosignedTransactions() []*sdk.AggregateTransaction {
-	out := make(chan []*sdk.AggregateTransaction, 1)
+func (sync *transactionSyncer) UnCosignedTransactions() []sdk.Transaction {
+	out := make(chan []sdk.Transaction, 1)
 	sync.getUnsigned <- &unsignedRequest{resp: out}
 
 	return <-out
@@ -460,7 +463,7 @@ func (sync *transactionSyncer) Close() (err error) {
 	return
 }
 
-func (sync *transactionSyncer) announceAggregateSync(ctx context.Context, tx *sdk.AggregateTransaction, opts ...AnnounceOption) <-chan Result {
+func (sync *transactionSyncer) announceAggregateSync(ctx context.Context, deadline *sdk.Deadline, tx sdk.Transaction, opts ...AnnounceOption) <-chan Result {
 	result := new(AnnounceResult)
 
 	resultCh := make(chan Result, 32) // 32 cause possible amount of CoSignatureResults is big
@@ -495,7 +498,7 @@ func (sync *transactionSyncer) announceAggregateSync(ctx context.Context, tx *sd
 		return resultCh
 	}
 
-	sync.handleTxn(tx.Deadline.Time, result.signedTxn.Hash, resultCh)
+	sync.handleTxn(deadline.Time, result.signedTxn.Hash, resultCh)
 
 	return resultCh
 }
@@ -587,7 +590,7 @@ func (meta *transactionMeta) isValid() bool {
 type transactionMetaGCFunc func(*transactionMeta, *ConfirmationResult)
 
 type unsignedRequest struct {
-	resp chan []*sdk.AggregateTransaction
+	resp chan []sdk.Transaction
 	hash *sdk.Hash
 }
 

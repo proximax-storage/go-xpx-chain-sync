@@ -45,9 +45,9 @@ type transactionAnnouncer interface {
 type transactionCache interface {
 	Unconfirmed() []*sdk.Hash
 
-	UnCosignedTransaction(hash *sdk.Hash) *sdk.AggregateTransaction
+	UnCosignedTransaction(hash *sdk.Hash) sdk.Transaction
 
-	UnCosignedTransactions() []*sdk.AggregateTransaction
+	UnCosignedTransactions() []sdk.Transaction
 }
 
 // Result interface is a result of transaction manipulation.

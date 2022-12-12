@@ -71,6 +71,44 @@ func AnnounceFullSync(ctx context.Context, syncer TransactionSyncer, tx sdk.Tran
 	}
 }
 
+// AnnounceFullSync fully synchronise work with Syncer and handles all the incoming Results
+// Also it is a reference on how to handle Results for different manipulation and for any kind of business logic.
+func AnnounceFullSyncSimple(ctx context.Context, syncer TransactionSyncer, deadline *sdk.Deadline, tx *sdk.SignedTransaction, opts ...AnnounceOption) (*ConfirmationResult, error) {
+	var timeout time.Duration
+
+	isAggregated := tx.EntityType == sdk.AggregateBondedV1 || tx.EntityType == sdk.AggregateBondedV2
+	if isAggregated {
+		timeout = deadline.Sub(time.Now())
+	} else {
+		timeout = TransactionResultsTimeout
+	}
+
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+
+	results := syncer.AnnounceSimpleSync(ctx, deadline, tx, opts...)
+
+	for {
+		select {
+		case res := <-results:
+			switch res.(type) {
+			case *AnnounceResult:
+				if res.Err() != nil {
+					return nil, res.Err()
+				}
+			case *ConfirmationResult:
+				return res.(*ConfirmationResult), nil
+			}
+		case <-timer.C:
+			return nil, ErrCatapultTimeout
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-syncer.Context().Done():
+			return nil, syncer.Context().Err()
+		}
+	}
+}
+
 // AnnounceFullSyncMany announces and waits till success or error for every transaction
 // returns slices of hashes and errors with results of announcing
 func AnnounceFullSyncMany(ctx context.Context, syncer TransactionSyncer, txs []sdk.Transaction, opts ...AnnounceOption) ([]*ConfirmationResult, error) {

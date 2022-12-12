@@ -329,6 +329,46 @@ func (sync *transactionSyncer) Announce(ctx context.Context, tx sdk.Transaction)
 	return signedTx, nil
 }
 
+// Announce sends it to Catapult via SDK
+func (sync *transactionSyncer) AnnounceSimple(ctx context.Context, tx *sdk.SignedTransaction) error {
+	if tx == nil {
+		return errors.New("nil transaction passed")
+	}
+
+	_, err := sync.Client.Transaction.Announce(ctx, tx)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// AnnounceSync wraps Announce and Sync methods to synchronize and validate transaction announcing.
+// Can return multiple results depending on what happening with transaction on catapult side.
+func (sync *transactionSyncer) AnnounceSimpleSync(ctx context.Context, deadline *sdk.Deadline, tx *sdk.SignedTransaction, opts ...AnnounceOption) <-chan Result {
+	result := new(AnnounceResult)
+
+	resultCh := make(chan Result, 1)
+	defer func() {
+		resultCh <- result
+	}()
+
+	if tx == nil {
+		result.err = errors.New("nil transaction passed")
+		return resultCh
+	}
+
+	result.signedTxn = tx
+	result.err = sync.AnnounceSimple(ctx, tx)
+	if result.err != nil {
+		return resultCh
+	}
+
+	sync.handleTxn(deadline.Time, result.signedTxn.Hash, resultCh)
+
+	return resultCh
+}
+
 // AnnounceSync wraps Announce and Sync methods to synchronize and validate transaction announcing.
 // Can return multiple results depending on what happening with transaction on catapult side.
 func (sync *transactionSyncer) AnnounceSync(ctx context.Context, tx sdk.Transaction, opts ...AnnounceOption) <-chan Result {

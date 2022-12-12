@@ -39,7 +39,7 @@ type transactionAnnouncer interface {
 
 	AnnounceSimple(ctx context.Context, tx *sdk.SignedTransaction) error
 
-	AnnounceSimpleSync(ctx context.Context, deadline *sdk.Deadline, tx *sdk.SignedTransaction, opts ...AnnounceOption) <-chan Result
+	AnnounceSimpleSync(ctx context.Context, deadline *sdk.Deadline, tx *sdk.SignedTransaction) <-chan Result
 
 	AnnounceSync(ctx context.Context, tx sdk.Transaction, opts ...AnnounceOption) <-chan Result
 

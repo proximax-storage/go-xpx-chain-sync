@@ -345,7 +345,7 @@ func (sync *transactionSyncer) AnnounceSimple(ctx context.Context, tx *sdk.Signe
 
 // AnnounceSync wraps Announce and Sync methods to synchronize and validate transaction announcing.
 // Can return multiple results depending on what happening with transaction on catapult side.
-func (sync *transactionSyncer) AnnounceSimpleSync(ctx context.Context, deadline *sdk.Deadline, tx *sdk.SignedTransaction, opts ...AnnounceOption) <-chan Result {
+func (sync *transactionSyncer) AnnounceSimpleSync(ctx context.Context, deadline *sdk.Deadline, tx *sdk.SignedTransaction) <-chan Result {
 	result := new(AnnounceResult)
 
 	resultCh := make(chan Result, 1)

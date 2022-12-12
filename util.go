@@ -73,7 +73,7 @@ func AnnounceFullSync(ctx context.Context, syncer TransactionSyncer, tx sdk.Tran
 
 // AnnounceFullSync fully synchronise work with Syncer and handles all the incoming Results
 // Also it is a reference on how to handle Results for different manipulation and for any kind of business logic.
-func AnnounceFullSyncSimple(ctx context.Context, syncer TransactionSyncer, deadline *sdk.Deadline, tx *sdk.SignedTransaction, opts ...AnnounceOption) (*ConfirmationResult, error) {
+func AnnounceFullSyncSimple(ctx context.Context, syncer TransactionSyncer, deadline *sdk.Deadline, tx *sdk.SignedTransaction) (*ConfirmationResult, error) {
 	var timeout time.Duration
 
 	isAggregated := tx.EntityType == sdk.AggregateBondedV1 || tx.EntityType == sdk.AggregateBondedV2
@@ -86,7 +86,7 @@ func AnnounceFullSyncSimple(ctx context.Context, syncer TransactionSyncer, deadl
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 
-	results := syncer.AnnounceSimpleSync(ctx, deadline, tx, opts...)
+	results := syncer.AnnounceSimpleSync(ctx, deadline, tx)
 
 	for {
 		select {
@@ -140,7 +140,7 @@ func AnnounceFullSyncMany(ctx context.Context, syncer TransactionSyncer, txs []s
 
 // AnnounceFullSyncMany announces and waits till success or error for every transaction
 // returns slices of hashes and errors with results of announcing
-func AnnounceFullSyncManySimple(ctx context.Context, syncer TransactionSyncer, deadlines []*sdk.Deadline, txs []*sdk.SignedTransaction, opts ...AnnounceOption) ([]*ConfirmationResult, error) {
+func AnnounceFullSyncManySimple(ctx context.Context, syncer TransactionSyncer, deadlines []*sdk.Deadline, txs []*sdk.SignedTransaction) ([]*ConfirmationResult, error) {
 	var (
 		errg error
 		once sync.Once
@@ -153,7 +153,7 @@ func AnnounceFullSyncManySimple(ctx context.Context, syncer TransactionSyncer, d
 		go func(i int, tx *sdk.SignedTransaction) {
 			defer wg.Done()
 			var err error
-			results[i], err = AnnounceFullSyncSimple(ctx, syncer, deadlines[i], tx, opts...)
+			results[i], err = AnnounceFullSyncSimple(ctx, syncer, deadlines[i], tx)
 			if err != nil {
 				once.Do(func() {
 					errg = err

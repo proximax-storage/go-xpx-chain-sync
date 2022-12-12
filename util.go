@@ -137,3 +137,32 @@ func AnnounceFullSyncMany(ctx context.Context, syncer TransactionSyncer, txs []s
 
 	return results, errg
 }
+
+// AnnounceFullSyncMany announces and waits till success or error for every transaction
+// returns slices of hashes and errors with results of announcing
+func AnnounceFullSyncManySimple(ctx context.Context, syncer TransactionSyncer, deadlines []*sdk.Deadline, txs []*sdk.SignedTransaction, opts ...AnnounceOption) ([]*ConfirmationResult, error) {
+	var (
+		errg error
+		once sync.Once
+		wg   sync.WaitGroup
+	)
+
+	results := make([]*ConfirmationResult, len(txs))
+	for i, tx := range txs {
+		wg.Add(1)
+		go func(i int, tx *sdk.SignedTransaction) {
+			defer wg.Done()
+			var err error
+			results[i], err = AnnounceFullSyncSimple(ctx, syncer, deadlines[i], tx, opts...)
+			if err != nil {
+				once.Do(func() {
+					errg = err
+				})
+			}
+		}(i, tx)
+	}
+
+	wg.Wait()
+
+	return results, errg
+}

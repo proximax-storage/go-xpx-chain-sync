@@ -493,7 +493,7 @@ func mapTxToHashes(txs []sdk.Transaction) map[sdk.Hash]*sdk.Transaction {
 // SyncVerify handles announced and signed transaction and returns multiple results through channel but also manually verifies the transaction state with a REST API CALL BEFORE
 // Pass only hash of announced transactions related to Syncer,
 // otherwise transaction won't be handled and would be cleaned after specified deadline
-func (sync *transactionSyncer) SyncVerifyMultiple(deadline time.Time, hashes []*sdk.Hash) map[sdk.Hash]chan Result {
+func (sync *transactionSyncer) SyncVerifyMultiple(deadlines []time.Time, hashes []*sdk.Hash) map[sdk.Hash]chan Result {
 	if hashes == nil || len(hashes) == 0 {
 		return nil
 	}
@@ -504,8 +504,10 @@ func (sync *transactionSyncer) SyncVerifyMultiple(deadline time.Time, hashes []*
 	}
 
 	resultChannels := make(map[sdk.Hash]chan Result)
-	for _, hash := range hashes {
+	deadlineMap := make(map[sdk.Hash]time.Time)
+	for idx, hash := range hashes {
 		resultChannels[*hash] = make(chan Result, 1)
+		deadlineMap[*hash] = deadlines[idx]
 	}
 	statuses, err := sync.Client.Transaction.GetTransactionsStatuses(sync.ctx, hashStrings)
 	if err == nil {
@@ -551,11 +553,11 @@ func (sync *transactionSyncer) SyncVerifyMultiple(deadline time.Time, hashes []*
 
 		}
 		for _, hash := range missingHashes {
-			sync.handleTxn(deadline, hash, resultChannels[*hash])
+			sync.handleTxn(deadlineMap[*hash], hash, resultChannels[*hash])
 		}
 	} else {
 		for _, hash := range hashes {
-			sync.handleTxn(deadline, hash, resultChannels[*hash])
+			sync.handleTxn(deadlineMap[*hash], hash, resultChannels[*hash])
 		}
 	}
 	return resultChannels

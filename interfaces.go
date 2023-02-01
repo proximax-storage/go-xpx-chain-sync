@@ -36,7 +36,7 @@ type transactionAnnouncer interface {
 	Sync(time.Time, *sdk.Hash) <-chan Result
 	SyncVerify(time.Time, *sdk.Hash) <-chan Result
 
-	SyncVerifyMultiple(deadline time.Time, hashes []*sdk.Hash) map[sdk.Hash]chan Result
+	SyncVerifyMultiple(deadline []time.Time, hashes []*sdk.Hash) map[sdk.Hash]chan Result
 
 	Announce(ctx context.Context, tx sdk.Transaction) (*sdk.SignedTransaction, error)
 

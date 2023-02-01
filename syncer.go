@@ -414,6 +414,153 @@ func (sync *transactionSyncer) Sync(deadline time.Time, hash *sdk.Hash) <-chan R
 	return resultCh
 }
 
+// SyncVerify handles announced and signed transaction and returns multiple results through channel but also manually verifies the transaction state with a REST API CALL BEFORE
+// Pass only hash of announced transactions related to Syncer,
+// otherwise transaction won't be handled and would be cleaned after specified deadline
+func (sync *transactionSyncer) SyncVerify(deadline time.Time, hash *sdk.Hash) <-chan Result {
+	if hash == nil {
+		return nil
+	}
+
+	resultCh := make(chan Result, 1)
+	status, err := sync.Client.Transaction.GetTransactionStatus(sync.ctx, hash.String())
+	if err == nil {
+		tx, err := sync.Client.Transaction.GetTransaction(sync.ctx, status.Group, hash.String())
+		if err != nil {
+			go func() {
+				resultCh <- &ConfirmationResult{err: errors.New("unable to retrieve transaction for verification")}
+				close(resultCh)
+			}()
+
+			return resultCh
+		}
+		switch status.Group {
+		case sdk.Confirmed:
+			go func() {
+				resultCh <- &ConfirmationResult{tx: tx}
+				close(resultCh)
+			}()
+			return resultCh
+		case sdk.Partial:
+			go func() {
+				resultCh <- &AggregatedAddedResult{
+					tx: tx,
+				}
+			}()
+		}
+	}
+
+	sync.handleTxn(deadline, hash, resultCh)
+	return resultCh
+}
+
+func (sync *transactionSyncer) getAllTransactionsById(hashes []*sdk.Hash) ([]sdk.Transaction, error) {
+	strHashes := make([]string, len(hashes))
+	for idx, hash := range hashes {
+		strHashes[idx] = hash.String()
+	}
+	records, err := sync.Client.Transaction.GetTransactionsByIds(sync.ctx, sdk.Partial, strHashes, nil)
+	if err != nil {
+		return nil, err
+	}
+	confirmedRecords, err := sync.Client.Transaction.GetTransactionsByIds(sync.ctx, sdk.Confirmed, strHashes, nil)
+	if err != nil {
+		return nil, err
+	}
+	unconfirmedRecords, err := sync.Client.Transaction.GetTransactionsByIds(sync.ctx, sdk.Unconfirmed, strHashes, nil)
+	if err != nil {
+		return nil, err
+	}
+	return append(append(records, confirmedRecords...), unconfirmedRecords...), nil
+}
+
+func (sync *transactionSyncer) getTransactionsById(group sdk.TransactionGroup, hashes []*sdk.Hash) ([]sdk.Transaction, error) {
+	strHashes := make([]string, len(hashes))
+	for idx, hash := range hashes {
+		strHashes[idx] = hash.String()
+	}
+	return sync.Client.Transaction.GetTransactionsByIds(sync.ctx, group, strHashes, nil)
+}
+
+func mapTxToHashes(txs []sdk.Transaction) map[sdk.Hash]*sdk.Transaction {
+	result := make(map[sdk.Hash]*sdk.Transaction)
+	for idx, _ := range txs {
+		result[*txs[idx].GetAbstractTransaction().TransactionHash] = &txs[idx]
+	}
+	return result
+}
+
+// SyncVerify handles announced and signed transaction and returns multiple results through channel but also manually verifies the transaction state with a REST API CALL BEFORE
+// Pass only hash of announced transactions related to Syncer,
+// otherwise transaction won't be handled and would be cleaned after specified deadline
+func (sync *transactionSyncer) SyncVerifyMultiple(deadline time.Time, hashes []*sdk.Hash) map[sdk.Hash]chan Result {
+	if hashes == nil || len(hashes) == 0 {
+		return nil
+	}
+
+	hashStrings := make([]string, len(hashes))
+	for idx, hash := range hashes {
+		hashStrings[idx] = hash.String()
+	}
+
+	resultChannels := make(map[sdk.Hash]chan Result)
+	for _, hash := range hashes {
+		resultChannels[*hash] = make(chan Result, 1)
+	}
+	statuses, err := sync.Client.Transaction.GetTransactionsStatuses(sync.ctx, hashStrings)
+	if err == nil {
+		var missingHashes []*sdk.Hash
+		var existingHashes []*sdk.Hash
+		for _, hash := range hashes {
+			found := false
+			for _, status := range statuses {
+				if status.Hash == hash {
+					found = true
+					existingHashes = append(existingHashes, hash)
+					break
+				}
+			}
+			if !found {
+				missingHashes = append(missingHashes, hash)
+			}
+		}
+		txs, err := sync.getAllTransactionsById(existingHashes)
+		txMap := mapTxToHashes(txs)
+		if err != nil {
+			for _, hash := range existingHashes {
+				go func(channel chan Result) {
+					channel <- &ConfirmationResult{err: errors.New("unable to retrieve transaction for verification")}
+					close(channel)
+				}(resultChannels[*hash])
+			}
+		} else {
+			for _, status := range statuses {
+				switch status.Group {
+				case sdk.Confirmed:
+					go func(channel chan Result, tx *sdk.Transaction) {
+						channel <- &ConfirmationResult{tx: *tx}
+						close(channel)
+					}(resultChannels[*status.Hash], txMap[*status.Hash])
+				case sdk.Partial:
+					go func(channel chan Result, tx *sdk.Transaction) {
+						channel <- &AggregatedAddedResult{tx: *tx}
+						close(channel)
+					}(resultChannels[*status.Hash], txMap[*status.Hash])
+				}
+			}
+
+		}
+		for _, hash := range missingHashes {
+			sync.handleTxn(deadline, hash, resultChannels[*hash])
+		}
+	} else {
+		for _, hash := range hashes {
+			sync.handleTxn(deadline, hash, resultChannels[*hash])
+		}
+	}
+	return resultChannels
+}
+
 // CoSign cosigns any transaction by given hash with Syncer's account.
 // If force is false, validates if that transaction exists through some time.
 func (sync *transactionSyncer) CoSign(ctx context.Context, hash *sdk.Hash, force bool) error {

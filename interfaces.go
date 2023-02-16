@@ -13,7 +13,7 @@ import (
 
 // Change those values if needed depending on the catapult version and used consensus
 var (
-	TransactionResultsTimeout   = time.Minute * 2
+	TransactionResultsTimeout   = time.Minute * 8
 	TransactionCosigningTimeout = time.Second * 15
 )
 

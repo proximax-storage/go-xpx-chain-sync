@@ -6,9 +6,10 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
-
 	"github.com/proximax-storage/go-xpx-chain-sdk/sdk"
 	"github.com/proximax-storage/go-xpx-chain-sdk/sdk/websocket"
+	"github.com/proximax-storage/go-xpx-utils/logger"
+	"go.uber.org/zap"
 )
 
 type transactionSyncer struct {
@@ -40,6 +41,8 @@ type transactionSyncer struct {
 	// GC ticker
 	gc  *time.Ticker
 	cfg *syncerConfig
+
+	logger *logger.Logger
 }
 
 // NewTransactionSyncer creates new instance of TransactionSyncer
@@ -52,7 +55,6 @@ func NewTransactionSyncer(ctx context.Context, config *sdk.Config, acc *sdk.Acco
 		return nil, errors.New("nil config passed")
 	}
 
-	var err error
 	ctx, cancel := context.WithCancel(ctx)
 
 	cfg := &syncerConfig{
@@ -83,6 +85,7 @@ func NewTransactionSyncer(ctx context.Context, config *sdk.Config, acc *sdk.Acco
 		cfg: cfg,
 	}
 
+	var err error
 	if cfg.wsClient == nil {
 		syncer.WSClient, err = websocket.NewClient(ctx, config)
 		if err != nil {
@@ -96,6 +99,12 @@ func NewTransactionSyncer(ctx context.Context, config *sdk.Config, acc *sdk.Acco
 		syncer.Client = sdk.NewClient(http.DefaultClient, config)
 	} else {
 		syncer.Client = cfg.client
+	}
+
+	if cfg.logger == nil {
+		syncer.logger, err = logger.NewLoggerFromZapConfig(zap.NewProductionConfig())
+	} else {
+		syncer.logger = cfg.logger
 	}
 
 	syncer.Account, err = syncer.Client.AdaptAccount(acc)
@@ -116,11 +125,18 @@ func NewTransactionSyncer(ctx context.Context, config *sdk.Config, acc *sdk.Acco
 
 // subscribe initialize listening to websocket
 func (sync *transactionSyncer) subscribe() (err error) {
+	sync.logger.Debug("Create subscriptions...")
+
 	if err = sync.WSClient.AddStatusHandlers(sync.Account.Address, func(info *sdk.StatusInfo) bool {
 		if info == nil {
 			// TODO Log that nil is passed
 			return false
 		}
+
+		sync.logger.Debug(
+			"Got transaction status by websocket:",
+			zap.Strings("info", []string{info.Hash.String(), info.Status}),
+		)
 
 		sync.statusChanel <- info
 		return false
@@ -134,6 +150,11 @@ func (sync *transactionSyncer) subscribe() (err error) {
 			return false
 		}
 
+		sync.logger.Debug(
+			"Got confirmed transaction by websocket:",
+			zap.String("hash", tx.GetAbstractTransaction().TransactionHash.String()),
+		)
+
 		sync.confirmedAddedChanel <- tx
 		return false
 	}); err != nil {
@@ -145,6 +166,11 @@ func (sync *transactionSyncer) subscribe() (err error) {
 			// TODO Log that nil is passed
 			return false
 		}
+
+		sync.logger.Debug(
+			"Got partial added transaction by websocket:",
+			zap.String("hash", tx.GetAbstractTransaction().TransactionHash.String()),
+		)
 
 		sync.partialAddedChanel <- tx
 		return false
@@ -158,6 +184,11 @@ func (sync *transactionSyncer) subscribe() (err error) {
 			return false
 		}
 
+		sync.logger.Debug(
+			"Got cosignature transaction by websocket:",
+			zap.String("hash", info.ParentHash.String()),
+		)
+
 		sync.cosignatureChanel <- info
 		return false
 	}); err != nil {
@@ -170,11 +201,18 @@ func (sync *transactionSyncer) subscribe() (err error) {
 			return false
 		}
 
+		sync.logger.Debug(
+			"Got unconfirmed transaction by websocket:",
+			zap.String("hash", tx.GetAbstractTransaction().TransactionHash.String()),
+		)
+
 		sync.unconfirmedAddedChanel <- tx
 		return false
 	}); err != nil {
 		return errors.Wrap(err, "adding unconfirmed added subscriber")
 	}
+
+	sync.logger.Debug("Subscriptions created")
 
 	return err
 }
@@ -217,6 +255,7 @@ func (sync *transactionSyncer) dispatcherLoop() {
 		case meta := <-sync.newUnconfirmed:
 			sync.unconfirmedCache[*meta.hash] = meta
 
+			sync.logger.Debug("Added tx to unconfirmed cache:", zap.String("hash", meta.hash.String()))
 		// Listening to websocket
 		case status := <-sync.statusChanel: // TODO Parse statuses to return right result
 			if meta, ok := sync.unconfirmedCache[*status.Hash]; ok {
@@ -314,6 +353,14 @@ func (sync *transactionSyncer) Announce(ctx context.Context, tx sdk.Transaction)
 		return nil, err
 	}
 
+	sync.logger.Debug(
+		"Announcing tx...",
+		zap.String("hash", signedTx.Hash.String()),
+		zap.Bool("isAggregateBonded", tx.GetAbstractTransaction().Type == sdk.AggregateBonded),
+		zap.Bool("isAggregateCompleted", tx.GetAbstractTransaction().Type == sdk.AggregateCompleted),
+		zap.Bool("isLockHash", tx.GetAbstractTransaction().Type == sdk.Lock),
+	)
+
 	if tx.GetAbstractTransaction().Type == sdk.AggregateBonded {
 		_, err = sync.Client.Transaction.AnnounceAggregateBonded(ctx, signedTx)
 		if err != nil {
@@ -326,6 +373,7 @@ func (sync *transactionSyncer) Announce(ctx context.Context, tx sdk.Transaction)
 		}
 	}
 
+	sync.logger.Debug("Tx announced", zap.String("hash", signedTx.Hash.String()))
 	return signedTx, nil
 }
 
@@ -544,6 +592,7 @@ func (sync *transactionSyncer) coSign(ctx context.Context, hash *sdk.Hash) error
 		return err
 	}
 
+	sync.logger.Debug("tx cosigned and announced", zap.String("hash", hash.String()))
 	return nil
 }
 
@@ -557,6 +606,8 @@ func (sync *transactionSyncer) handleTxn(deadline time.Time, hash *sdk.Hash, res
 }
 
 func (sync *transactionSyncer) collectGarbage(gc transactionMetaGCFunc) {
+	sync.logger.Info("Collecting syncer garbage...")
+
 	for _, meta := range sync.unconfirmedCache {
 		if meta.isValid() {
 			gc(meta, &ConfirmationResult{err: ErrTxnDeadlineExceeded})

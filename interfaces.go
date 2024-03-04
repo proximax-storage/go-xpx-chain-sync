@@ -6,9 +6,9 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
-
 	"github.com/proximax-storage/go-xpx-chain-sdk/sdk"
 	"github.com/proximax-storage/go-xpx-chain-sdk/sdk/websocket"
+	"github.com/proximax-storage/go-xpx-utils/logger"
 )
 
 // Change those values if needed depending on the catapult version and used consensus
@@ -68,6 +68,13 @@ type syncerConfig struct {
 	client            *sdk.Client
 	connectionTimeout time.Duration
 	gcTimeout         time.Duration
+	logger            *logger.Logger
+}
+
+func WithLogger(l *logger.Logger) SyncerOption {
+	return func(config *syncerConfig) {
+		config.logger = l
+	}
 }
 
 func WithWsClient(client websocket.CatapultClient) SyncerOption {

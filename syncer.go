@@ -221,24 +221,6 @@ func (sync *transactionSyncer) subscribe() (err error) {
 // It handles all the incoming data from subscriptions and syncs it with underlying cache.
 // Also process requests on what transaction to sync and data return requests
 func (sync *transactionSyncer) dispatcherLoop() {
-	pushResult := func(ch chan<- Result, res Result, closing bool) {
-		defer func() {
-			recover()
-		}()
-
-		ch <- res
-
-		if closing {
-			close(ch) // TODO Fix race
-		}
-	}
-
-	metaGc := func(meta *transactionMeta, res *ConfirmationResult) {
-		res.hash = meta.hash
-		go pushResult(meta.resultCh, res, true)
-		delete(sync.unconfirmedCache, *meta.hash)
-	}
-
 	getAbstract := func(tx sdk.Transaction) *sdk.AbstractTransaction {
 		atx := tx.GetAbstractTransaction()
 		if atx != nil {
@@ -259,40 +241,40 @@ func (sync *transactionSyncer) dispatcherLoop() {
 		// Listening to websocket
 		case status := <-sync.statusChanel: // TODO Parse statuses to return right result
 			if meta, ok := sync.unconfirmedCache[*status.Hash]; ok {
-				metaGc(meta, &ConfirmationResult{err: errors.New(status.Status)}) // TODO Introduce new error type with all possible Catapult errors
+				meta.resultCh <- &ConfirmationResult{err: errors.New(status.Status), hash: meta.hash} // TODO Introduce new error type with all possible Catapult errors
+				close(meta.resultCh)
+				delete(sync.unconfirmedCache, *meta.hash)
 			}
 		case confirmed := <-sync.confirmedAddedChanel:
 			tx := getAbstract(confirmed)
 			if meta, ok := sync.unconfirmedCache[*tx.TransactionHash]; ok {
-				metaGc(meta, &ConfirmationResult{tx: confirmed})
+				meta.resultCh <- &ConfirmationResult{tx: confirmed, hash: meta.hash}
+				close(meta.resultCh)
+				delete(sync.unconfirmedCache, *meta.hash)
 			}
 
 			delete(sync.unsignedCache, *confirmed.GetAbstractTransaction().TransactionHash)
 		case bonded := <-sync.partialAddedChanel:
 			tx := getAbstract(bonded)
 			if meta, ok := sync.unconfirmedCache[*tx.TransactionHash]; ok {
-				go pushResult(meta.resultCh, &AggregatedAddedResult{
-					tx: bonded,
-				}, false)
+				meta.resultCh <- &AggregatedAddedResult{tx: bonded}
 			} else {
 				// Unhandled transaction received, saving to cache...
 				sync.unsignedCache[*tx.TransactionHash] = bonded
 			}
 		case cosignature := <-sync.cosignatureChanel:
 			if meta, ok := sync.unconfirmedCache[*cosignature.ParentHash]; ok {
-				go pushResult(meta.resultCh, &CoSignatureResult{
+				meta.resultCh <- &CoSignatureResult{
 					txHash:    cosignature.ParentHash,
 					signer:    cosignature.Signer,
 					signature: cosignature.Signature,
-				}, false)
+				}
 			}
 		case unconfirmed := <-sync.unconfirmedAddedChanel:
 			tx := getAbstract(unconfirmed)
 			if meta, ok := sync.unconfirmedCache[*tx.TransactionHash]; ok {
 				meta.unconfirmed = true
-				go pushResult(meta.resultCh, &UnconfirmedResult{
-					tx: unconfirmed,
-				}, false)
+				meta.resultCh <- &UnconfirmedResult{tx: unconfirmed}
 			}
 
 		// Value requests
@@ -302,8 +284,6 @@ func (sync *transactionSyncer) dispatcherLoop() {
 			if req.hash != nil {
 				if hash, ok := sync.unsignedCache[*req.hash]; ok {
 					out = append(out, hash)
-				} else {
-					out = append(out, nil)
 				}
 			} else {
 				for _, tx := range sync.unsignedCache {
@@ -325,9 +305,9 @@ func (sync *transactionSyncer) dispatcherLoop() {
 
 		// Util
 		case <-sync.gc.C:
-			sync.collectGarbage(metaGc)
+			sync.collectGarbage()
 		case <-sync.ctx.Done():
-			sync.collectGarbage(metaGc)
+			sync.collectGarbage()
 			sync.gc.Stop()
 
 			for _, meta := range sync.unconfirmedCache {
@@ -380,28 +360,20 @@ func (sync *transactionSyncer) Announce(ctx context.Context, tx sdk.Transaction)
 // AnnounceSync wraps Announce and Sync methods to synchronize and validate transaction announcing.
 // Can return multiple results depending on what happening with transaction on catapult side.
 func (sync *transactionSyncer) AnnounceSync(ctx context.Context, tx sdk.Transaction, opts ...AnnounceOption) <-chan Result {
-	result := new(AnnounceResult)
-
-	resultCh := make(chan Result, 1)
-	defer func() {
-		resultCh <- result
-	}()
-
-	if tx == nil {
-		result.err = errors.New("nil transaction passed")
-		return resultCh
-	}
-
-	if tx.GetAbstractTransaction().Type == sdk.AggregateBonded {
+	if tx != nil && tx.GetAbstractTransaction().Type == sdk.AggregateBonded {
 		return sync.announceAggregateSync(ctx, tx.(*sdk.AggregateTransaction), opts...)
 	}
 
+	result := new(AnnounceResult)
+	resultCh := make(chan Result, 1)
+
 	result.signedTxn, result.err = sync.Announce(ctx, tx)
 	if result.err != nil {
-		return resultCh
+		resultCh <- result
+		close(resultCh)
+	} else {
+		sync.handleTxn(tx.GetAbstractTransaction().Deadline.Time, result.signedTxn.Hash, resultCh)
 	}
-
-	sync.handleTxn(tx.GetAbstractTransaction().Deadline.Time, result.signedTxn.Hash, resultCh)
 
 	return resultCh
 }
@@ -430,30 +402,12 @@ func (sync *transactionSyncer) CoSign(ctx context.Context, hash *sdk.Hash, force
 		return sync.coSign(ctx, hash)
 	}
 
-	tx := sync.UnCosignedTransaction(hash)
-	if tx != nil {
-		return sync.coSign(ctx, hash)
-	}
-
-	results := sync.Sync(time.Now().Add(TransactionCosigningTimeout), hash)
 	for {
 		select {
-		case res := <-results:
-			switch res.(type) {
-			case *AggregatedAddedResult:
+		case <-time.After(TransactionCosigningTimeout):
+			tx := sync.UnCosignedTransaction(hash)
+			if tx != nil {
 				return sync.coSign(ctx, hash)
-			case *ConfirmationResult:
-				if res.Err() == ErrTxnDeadlineExceeded {
-					tx := sync.UnCosignedTransaction(hash)
-					if tx != nil {
-						return sync.coSign(ctx, hash)
-					}
-
-					return ErrCoSignTimeout
-				}
-				// hmm, very strange behavior...
-
-				return res.Err()
 			}
 		case <-sync.ctx.Done():
 			return sync.ctx.Err()
@@ -514,6 +468,11 @@ func (sync *transactionSyncer) announceAggregateSync(ctx context.Context, tx *sd
 	resultCh := make(chan Result, 32) // 32 cause possible amount of CoSignatureResults is big
 	defer func() {
 		resultCh <- result
+		if result.err == nil {
+			sync.handleTxn(tx.Deadline.Time, result.signedTxn.Hash, resultCh)
+		} else {
+			close(resultCh)
+		}
 	}()
 
 	result.signedTxn, result.err = sync.Account.Sign(tx)
@@ -539,11 +498,11 @@ func (sync *transactionSyncer) announceAggregateSync(ctx context.Context, tx *sd
 	}
 
 	_, result.err = sync.Client.Transaction.AnnounceAggregateBonded(ctx, result.signedTxn)
-	if result.err != nil {
-		return resultCh
-	}
+	//if result.err != nil {
+	//	return resultCh
+	//}
 
-	sync.handleTxn(tx.Deadline.Time, result.signedTxn.Hash, resultCh)
+	//sync.handleTxn(tx.Deadline.Time, result.signedTxn.Hash, resultCh)
 
 	return resultCh
 }
@@ -605,12 +564,14 @@ func (sync *transactionSyncer) handleTxn(deadline time.Time, hash *sdk.Hash, res
 	}
 }
 
-func (sync *transactionSyncer) collectGarbage(gc transactionMetaGCFunc) {
-	sync.logger.Info("Collecting syncer garbage...")
+func (sync *transactionSyncer) collectGarbage() {
+	sync.logger.Debug("Collecting syncer garbage...")
 
 	for _, meta := range sync.unconfirmedCache {
-		if meta.isValid() {
-			gc(meta, &ConfirmationResult{err: ErrTxnDeadlineExceeded})
+		if !meta.isValid() {
+			meta.resultCh <- &ConfirmationResult{err: ErrTxnDeadlineExceeded}
+			close(meta.resultCh)
+			delete(sync.unconfirmedCache, *meta.hash)
 		}
 	}
 }
@@ -628,14 +589,12 @@ type transactionMeta struct {
 	hash        *sdk.Hash
 	resultCh    chan<- Result
 	unconfirmed bool
+	coSigned    bool
 }
 
 func (meta *transactionMeta) isValid() bool {
-	now := time.Now()
-	return meta.deadline.Before(now) || meta.deadline.Equal(now)
+	return meta.deadline.Before(time.Now())
 }
-
-type transactionMetaGCFunc func(*transactionMeta, *ConfirmationResult)
 
 type unsignedRequest struct {
 	resp chan []*sdk.AggregateTransaction

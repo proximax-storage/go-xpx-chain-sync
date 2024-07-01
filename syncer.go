@@ -405,14 +405,16 @@ func (sync *transactionSyncer) CoSign(ctx context.Context, hash *sdk.Hash, force
 	for {
 		select {
 		case <-time.After(TransactionCosigningTimeout):
-			tx := sync.UnCosignedTransaction(hash)
-			if tx != nil {
-				return sync.coSign(ctx, hash)
-			}
+			return ErrCoSignTimeout
 		case <-sync.ctx.Done():
 			return sync.ctx.Err()
 		case <-ctx.Done():
 			return ctx.Err()
+		default:
+			tx := sync.UnCosignedTransaction(hash)
+			if tx != nil {
+				return sync.coSign(ctx, hash)
+			}
 		}
 	}
 }

@@ -595,7 +595,7 @@ type transactionMeta struct {
 }
 
 func (meta *transactionMeta) isValid() bool {
-	return meta.deadline.Before(time.Now())
+	return time.Now().Before(meta.deadline)
 }
 
 type unsignedRequest struct {

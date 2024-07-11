@@ -278,6 +278,7 @@ func (sync *transactionSyncer) dispatcherLoop() {
 			}
 
 		// Value requests
+		// TODO if hash != nil write to chan only if tx is found
 		case req := <-sync.getUnsigned:
 			var out []*sdk.AggregateTransaction
 
@@ -402,15 +403,22 @@ func (sync *transactionSyncer) CoSign(ctx context.Context, hash *sdk.Hash, force
 		return sync.coSign(ctx, hash)
 	}
 
+	timeoutTicker := time.NewTicker(TransactionCosigningTimeout)
+	defer timeoutTicker.Stop()
+
+	// TODO delete when UnCosignedTransaction will work properly
+	periodicTicker := time.NewTicker(time.Second * 5)
+	defer periodicTicker.Stop()
+
 	for {
 		select {
-		case <-time.After(TransactionCosigningTimeout):
+		case <-timeoutTicker.C:
 			return ErrCoSignTimeout
 		case <-sync.ctx.Done():
 			return sync.ctx.Err()
 		case <-ctx.Done():
 			return ctx.Err()
-		default:
+		case <-timeoutTicker.C:
 			tx := sync.UnCosignedTransaction(hash)
 			if tx != nil {
 				return sync.coSign(ctx, hash)

@@ -418,7 +418,7 @@ func (sync *transactionSyncer) CoSign(ctx context.Context, hash *sdk.Hash, force
 			return sync.ctx.Err()
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-timeoutTicker.C:
+		case <-periodicTicker.C:
 			tx := sync.UnCosignedTransaction(hash)
 			if tx != nil {
 				return sync.coSign(ctx, hash)

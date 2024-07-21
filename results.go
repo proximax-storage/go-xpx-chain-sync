@@ -83,7 +83,8 @@ func (r *CoSignatureResult) Signature() *sdk.Signature {
 }
 
 type AggregatedAddedResult struct {
-	tx *sdk.AggregateTransaction
+	tx  *sdk.AggregateTransaction
+	err error
 }
 
 func (r *AggregatedAddedResult) Hash() *sdk.Hash {
@@ -91,5 +92,5 @@ func (r *AggregatedAddedResult) Hash() *sdk.Hash {
 }
 
 func (r *AggregatedAddedResult) Err() error {
-	return nil
+	return r.err
 }

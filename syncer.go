@@ -30,8 +30,10 @@ type transactionSyncer struct {
 	unconfirmedAddedChanel chan sdk.Transaction
 
 	// Unsigned cache
-	unsignedCache map[sdk.Hash]*sdk.AggregateTransaction // contains all the aggregate transactions Syncer's account taking part in TODO Handle possible memory leak when transactions are not confirmed
-	getUnsigned   chan *unsignedRequest
+	unsignedCache     map[sdk.Hash]*aggregateTransactionMeta // contains all the aggregate transactions Syncer's account taking part in
+	unsignedSubs      map[sdk.Hash]*unsignedSub
+	getUnsignedByHash chan *unsignedRequestByHash
+	getUnsigned       chan *unsignedRequest
 
 	// Unconfirmed transactions cache and request channels
 	unconfirmedCache map[sdk.Hash]*transactionMeta
@@ -67,13 +69,15 @@ func NewTransactionSyncer(ctx context.Context, config *sdk.Config, acc *sdk.Acco
 	}
 
 	syncer := &transactionSyncer{
-		ctx:              ctx,
-		cancel:           cancel,
-		Account:          acc,
-		unsignedCache:    make(map[sdk.Hash]*sdk.AggregateTransaction),
-		getUnsigned:      make(chan *unsignedRequest),
-		unconfirmedCache: make(map[sdk.Hash]*transactionMeta),
-		newUnconfirmed:   make(chan *transactionMeta),
+		ctx:               ctx,
+		cancel:            cancel,
+		Account:           acc,
+		unsignedCache:     make(map[sdk.Hash]*aggregateTransactionMeta),
+		unsignedSubs:      make(map[sdk.Hash]*unsignedSub),
+		getUnsignedByHash: make(chan *unsignedRequestByHash),
+		getUnsigned:       make(chan *unsignedRequest),
+		unconfirmedCache:  make(map[sdk.Hash]*transactionMeta),
+		newUnconfirmed:    make(chan *transactionMeta),
 
 		statusChanel:           make(chan *sdk.StatusInfo, 16),
 		confirmedAddedChanel:   make(chan sdk.Transaction, 16),
@@ -245,6 +249,15 @@ func (sync *transactionSyncer) dispatcherLoop() {
 				close(meta.resultCh)
 				delete(sync.unconfirmedCache, *meta.hash)
 			}
+
+			if _, ok := sync.unsignedCache[*status.Hash]; ok {
+				delete(sync.unsignedCache, *status.Hash)
+			}
+
+			if m, ok := sync.unsignedSubs[*status.Hash]; ok {
+				m.resp <- &AggregatedAddedResult{tx: nil, err: errors.New(status.Status)}
+				delete(sync.unsignedSubs, *status.Hash)
+			}
 		case confirmed := <-sync.confirmedAddedChanel:
 			tx := getAbstract(confirmed)
 			if meta, ok := sync.unconfirmedCache[*tx.TransactionHash]; ok {
@@ -258,9 +271,19 @@ func (sync *transactionSyncer) dispatcherLoop() {
 			tx := getAbstract(bonded)
 			if meta, ok := sync.unconfirmedCache[*tx.TransactionHash]; ok {
 				meta.resultCh <- &AggregatedAddedResult{tx: bonded}
-			} else {
-				// Unhandled transaction received, saving to cache...
-				sync.unsignedCache[*tx.TransactionHash] = bonded
+				continue
+			}
+
+			if sub, ok := sync.unsignedSubs[*tx.TransactionHash]; ok {
+				sub.resp <- &AggregatedAddedResult{tx: bonded}
+				delete(sync.unsignedSubs, *tx.TransactionHash)
+				continue
+			}
+
+			// Unhandled transaction received, saving to cache...
+			sync.unsignedCache[*tx.TransactionHash] = &aggregateTransactionMeta{
+				deadline: bonded.Deadline.Time,
+				tx:       bonded,
 			}
 		case cosignature := <-sync.cosignatureChanel:
 			if meta, ok := sync.unconfirmedCache[*cosignature.ParentHash]; ok {
@@ -278,21 +301,30 @@ func (sync *transactionSyncer) dispatcherLoop() {
 			}
 
 		// Value requests
-		// TODO if hash != nil write to chan only if tx is found
 		case req := <-sync.getUnsigned:
-			var out []*sdk.AggregateTransaction
-
-			if req.hash != nil {
-				if hash, ok := sync.unsignedCache[*req.hash]; ok {
-					out = append(out, hash)
-				}
-			} else {
-				for _, tx := range sync.unsignedCache {
-					out = append(out, tx)
-				}
+			out := make([]*sdk.AggregateTransaction, 0, len(sync.unsignedCache))
+			for _, entry := range sync.unsignedCache {
+				out = append(out, entry.tx)
 			}
 
 			req.resp <- out
+		case req := <-sync.getUnsignedByHash:
+			if req.hash == nil {
+				req.resp <- &AggregatedAddedResult{err: ErrNilHashPassed}
+				continue
+			}
+
+			entry, ok := sync.unsignedCache[*req.hash]
+			if ok {
+				req.resp <- &AggregatedAddedResult{tx: entry.tx}
+				delete(sync.unsignedCache, *req.hash)
+				continue
+			}
+
+			sync.unsignedSubs[*req.hash] = &unsignedSub{
+				deadline: time.Now().Add(TransactionCosigningTimeout),
+				resp:     req.resp,
+			}
 		case req := <-sync.getUnconfirmed:
 			var hashes []*sdk.Hash
 
@@ -406,23 +438,20 @@ func (sync *transactionSyncer) CoSign(ctx context.Context, hash *sdk.Hash, force
 	timeoutTicker := time.NewTicker(TransactionCosigningTimeout)
 	defer timeoutTicker.Stop()
 
-	// TODO delete when UnCosignedTransaction will work properly
-	periodicTicker := time.NewTicker(time.Second * 5)
-	defer periodicTicker.Stop()
-
+	resCh := sync.UnCosignedTransaction(hash)
 	for {
 		select {
+		case res := <-resCh:
+			if res.Err() != nil {
+				return res.Err()
+			}
+			return sync.coSign(ctx, res.Hash())
 		case <-timeoutTicker.C:
-			return ErrCoSignTimeout
+			return ErrCannotGetAggTransaction
 		case <-sync.ctx.Done():
 			return sync.ctx.Err()
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-periodicTicker.C:
-			tx := sync.UnCosignedTransaction(hash)
-			if tx != nil {
-				return sync.coSign(ctx, hash)
-			}
 		}
 	}
 }
@@ -436,19 +465,15 @@ func (sync *transactionSyncer) Unconfirmed() []*sdk.Hash { // TODO Return more i
 }
 
 // UnCosignedTransaction returns aggregate bonded transaction in which Syncer's account signature is requested.
-func (sync *transactionSyncer) UnCosignedTransaction(hash *sdk.Hash) *sdk.AggregateTransaction {
+func (sync *transactionSyncer) UnCosignedTransaction(hash *sdk.Hash) <-chan *AggregatedAddedResult {
 	if hash == nil {
 		return nil
 	}
 
-	out := make(chan []*sdk.AggregateTransaction, 1)
-	sync.getUnsigned <- &unsignedRequest{resp: out, hash: hash}
+	out := make(chan *AggregatedAddedResult)
+	sync.getUnsignedByHash <- &unsignedRequestByHash{resp: out, hash: hash}
 
-	if txs := <-out; txs != nil {
-		return txs[0]
-	}
-
-	return nil
+	return out
 }
 
 // UnCosignedTransactions returns all aggregate bonded transactions in which Syncer's account is taking part
@@ -584,6 +609,18 @@ func (sync *transactionSyncer) collectGarbage() {
 			delete(sync.unconfirmedCache, *meta.hash)
 		}
 	}
+
+	for h, meta := range sync.unsignedCache {
+		if !isDeadlineValid(meta.deadline) {
+			delete(sync.unconfirmedCache, h)
+		}
+	}
+
+	for h, meta := range sync.unsignedSubs {
+		if !isDeadlineValid(meta.deadline) {
+			delete(sync.unsignedSubs, h)
+		}
+	}
 }
 
 const (
@@ -593,6 +630,11 @@ const (
 	defLockDeadline = time.Hour
 	defLockAmount   = 10
 )
+
+type aggregateTransactionMeta struct {
+	deadline time.Time
+	tx       *sdk.AggregateTransaction
+}
 
 type transactionMeta struct {
 	deadline    time.Time
@@ -608,9 +650,22 @@ func (meta *transactionMeta) isValid() bool {
 
 type unsignedRequest struct {
 	resp chan []*sdk.AggregateTransaction
+}
+
+type unsignedRequestByHash struct {
+	resp chan *AggregatedAddedResult
 	hash *sdk.Hash
 }
 
 type unconfirmedRequest struct {
 	resp chan []*sdk.Hash
+}
+
+type unsignedSub struct {
+	deadline time.Time
+	resp     chan *AggregatedAddedResult
+}
+
+func isDeadlineValid(deadline time.Time) bool {
+	return time.Now().Before(deadline)
 }

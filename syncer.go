@@ -91,13 +91,15 @@ func NewTransactionSyncer(ctx context.Context, config *sdk.Config, acc *sdk.Acco
 
 	var err error
 	if cfg.wsClient == nil {
-		syncer.WSClient, err = websocket.NewClient(ctx, config)
+		syncer.WSClient, err = websocket.NewClient(config)
 		if err != nil {
 			return nil, errors.Wrap(err, "creating websocket client")
 		}
 	} else {
 		syncer.WSClient = cfg.wsClient
 	}
+
+	go syncer.WSClient.Listen(ctx)
 
 	if cfg.client == nil {
 		syncer.Client = sdk.NewClient(http.DefaultClient, config)
@@ -116,8 +118,6 @@ func NewTransactionSyncer(ctx context.Context, config *sdk.Config, acc *sdk.Acco
 		return nil, err
 	}
 
-	go syncer.WSClient.Listen()
-
 	if err = syncer.subscribe(); err != nil {
 		return nil, err
 	}
@@ -131,93 +131,62 @@ func NewTransactionSyncer(ctx context.Context, config *sdk.Config, acc *sdk.Acco
 func (sync *transactionSyncer) subscribe() (err error) {
 	sync.logger.Debug("Create subscriptions...")
 
-	if err = sync.WSClient.AddStatusHandlers(sync.Account.Address, func(info *sdk.StatusInfo) bool {
-		if info == nil {
-			// TODO Log that nil is passed
-			return false
+	statusChanel, _, err := sync.WSClient.NewStatusSubscription(sync.Account.Address)
+	go func() {
+		for data := range statusChanel {
+			sync.logger.Debug(
+				"Got transaction status by websocket:",
+				zap.Strings("info", []string{data.Hash.String(), data.Status}),
+			)
+			sync.statusChanel <- data
 		}
+	}()
 
-		sync.logger.Debug(
-			"Got transaction status by websocket:",
-			zap.Strings("info", []string{info.Hash.String(), info.Status}),
-		)
-
-		sync.statusChanel <- info
-		return false
-	}); err != nil {
-		return errors.Wrap(err, "adding status subscriber")
-	}
-
-	if err = sync.WSClient.AddConfirmedAddedHandlers(sync.Account.Address, func(tx sdk.Transaction) bool {
-		if tx == nil {
-			// TODO Log that nil is passed
-			return false
+	confirmedAddedChanel, _, err := sync.WSClient.NewConfirmedAddedSubscription(sync.Account.Address)
+	go func() {
+		for data := range confirmedAddedChanel {
+			sync.logger.Debug(
+				"Got confirmed transaction by websocket:",
+				zap.String("hash", data.GetAbstractTransaction().TransactionHash.String()),
+			)
+			sync.confirmedAddedChanel <- data
 		}
+	}()
 
-		sync.logger.Debug(
-			"Got confirmed transaction by websocket:",
-			zap.String("hash", tx.GetAbstractTransaction().TransactionHash.String()),
-		)
-
-		sync.confirmedAddedChanel <- tx
-		return false
-	}); err != nil {
-		return errors.Wrap(err, "adding confirmed added subscriber")
-	}
-
-	if err = sync.WSClient.AddPartialAddedHandlers(sync.Account.Address, func(tx *sdk.AggregateTransaction) bool {
-		if tx == nil {
-			// TODO Log that nil is passed
-			return false
+	unconfirmedAddedChanel, _, err := sync.WSClient.NewUnConfirmedAddedSubscription(sync.Account.Address)
+	go func() {
+		for data := range unconfirmedAddedChanel {
+			sync.logger.Debug(
+				"Got unconfirmed transaction by websocket:",
+				zap.String("hash", data.GetAbstractTransaction().TransactionHash.String()),
+			)
+			sync.unconfirmedAddedChanel <- data
 		}
+	}()
 
-		sync.logger.Debug(
-			"Got partial added transaction by websocket:",
-			zap.String("hash", tx.GetAbstractTransaction().TransactionHash.String()),
-		)
-
-		sync.partialAddedChanel <- tx
-		return false
-	}); err != nil {
-		return errors.Wrap(err, "adding partial added subscriber")
-	}
-
-	if err = sync.WSClient.AddCosignatureHandlers(sync.Account.Address, func(info *sdk.SignerInfo) bool {
-		if info == nil {
-			// TODO Log that nil is passed
-			return false
+	partialAddedChanel, _, err := sync.WSClient.NewPartialAddedSubscription(sync.Account.Address)
+	go func() {
+		for data := range partialAddedChanel {
+			sync.logger.Debug(
+				"Got partial added transaction by websocket:",
+				zap.String("hash", data.GetAbstractTransaction().TransactionHash.String()),
+			)
+			sync.partialAddedChanel <- data
 		}
+	}()
 
-		sync.logger.Debug(
-			"Got cosignature transaction by websocket:",
-			zap.String("hash", info.ParentHash.String()),
-		)
-
-		sync.cosignatureChanel <- info
-		return false
-	}); err != nil {
-		return errors.Wrap(err, "adding cosignature subscriber")
-	}
-
-	if err = sync.WSClient.AddUnconfirmedAddedHandlers(sync.Account.Address, func(tx sdk.Transaction) bool {
-		if tx == nil {
-			// TODO Log that nil is passed
-			return false
+	cosignatureChanel, _, err := sync.WSClient.NewCosignatureSubscription(sync.Account.Address)
+	go func() {
+		for data := range cosignatureChanel {
+			sync.logger.Debug(
+				"Got cosignature transaction by websocket:",
+				zap.String("hash", data.ParentHash.String()),
+			)
+			sync.cosignatureChanel <- data
 		}
-
-		sync.logger.Debug(
-			"Got unconfirmed transaction by websocket:",
-			zap.String("hash", tx.GetAbstractTransaction().TransactionHash.String()),
-		)
-
-		sync.unconfirmedAddedChanel <- tx
-		return false
-	}); err != nil {
-		return errors.Wrap(err, "adding unconfirmed added subscriber")
-	}
+	}()
 
 	sync.logger.Debug("Subscriptions created")
-
 	return err
 }
 
@@ -533,12 +502,6 @@ func (sync *transactionSyncer) announceAggregateSync(ctx context.Context, tx *sd
 	}
 
 	_, result.err = sync.Client.Transaction.AnnounceAggregateBonded(ctx, result.signedTxn)
-	//if result.err != nil {
-	//	return resultCh
-	//}
-
-	//sync.handleTxn(tx.Deadline.Time, result.signedTxn.Hash, resultCh)
-
 	return resultCh
 }
 

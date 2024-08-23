@@ -132,11 +132,39 @@ func (sync *transactionSyncer) subscribe(ctx context.Context) (err error) {
 	sync.logger.Debug("Create subscriptions...")
 
 	statusChanel, statusId, err := sync.WSClient.NewStatusSubscription(sync.Account.Address)
+	if err != nil {
+		return err
+	}
+
+	confirmedAddedChanel, confirmedAddedId, err := sync.WSClient.NewConfirmedAddedSubscription(sync.Account.Address)
+	if err != nil {
+		return err
+	}
+
+	unconfirmedAddedChanel, unconfirmedAddedId, err := sync.WSClient.NewUnConfirmedAddedSubscription(sync.Account.Address)
+	if err != nil {
+		return err
+	}
+
+	partialAddedChanel, partialAddedId, err := sync.WSClient.NewPartialAddedSubscription(sync.Account.Address)
+	if err != nil {
+		return err
+	}
+
+	cosignatureChanel, cosignatureId, err := sync.WSClient.NewCosignatureSubscription(sync.Account.Address)
+	if err != nil {
+		return err
+	}
+
 	go func() {
 		for {
 			select {
 			case <-ctx.Done():
 				sync.WSClient.StatusUnsubscribe(sync.Account.Address, statusId)
+				sync.WSClient.ConfirmedAddedUnsubscribe(sync.Account.Address, confirmedAddedId)
+				sync.WSClient.UnConfirmedRemovedUnsubscribe(sync.Account.Address, unconfirmedAddedId)
+				sync.WSClient.PartialAddedUnsubscribe(sync.Account.Address, partialAddedId)
+				sync.WSClient.CosignatureUnsubscribe(sync.Account.Address, cosignatureId)
 				return
 			case data := <-statusChanel:
 				sync.logger.Debug(
@@ -144,68 +172,24 @@ func (sync *transactionSyncer) subscribe(ctx context.Context) (err error) {
 					zap.Strings("info", []string{data.Hash.String(), data.Status}),
 				)
 				sync.statusChanel <- data
-			}
-		}
-	}()
-
-	confirmedAddedChanel, confirmedAddedId, err := sync.WSClient.NewConfirmedAddedSubscription(sync.Account.Address)
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				sync.WSClient.ConfirmedAddedUnsubscribe(sync.Account.Address, confirmedAddedId)
-				return
 			case data := <-confirmedAddedChanel:
 				sync.logger.Debug(
 					"Got confirmed transaction by websocket:",
 					zap.String("hash", data.GetAbstractTransaction().TransactionHash.String()),
 				)
 				sync.confirmedAddedChanel <- data
-			}
-		}
-	}()
-
-	unconfirmedAddedChanel, unconfirmedAddedId, err := sync.WSClient.NewUnConfirmedAddedSubscription(sync.Account.Address)
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				sync.WSClient.UnConfirmedRemovedUnsubscribe(sync.Account.Address, unconfirmedAddedId)
-				return
 			case data := <-unconfirmedAddedChanel:
 				sync.logger.Debug(
 					"Got unconfirmed transaction by websocket:",
 					zap.String("hash", data.GetAbstractTransaction().TransactionHash.String()),
 				)
 				sync.unconfirmedAddedChanel <- data
-			}
-		}
-	}()
-
-	partialAddedChanel, partialAddedId, err := sync.WSClient.NewPartialAddedSubscription(sync.Account.Address)
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				sync.WSClient.PartialAddedUnsubscribe(sync.Account.Address, partialAddedId)
-				return
 			case data := <-partialAddedChanel:
 				sync.logger.Debug(
 					"Got partial added transaction by websocket:",
 					zap.String("hash", data.GetAbstractTransaction().TransactionHash.String()),
 				)
 				sync.partialAddedChanel <- data
-			}
-		}
-	}()
-
-	cosignatureChanel, cosignatureId, err := sync.WSClient.NewCosignatureSubscription(sync.Account.Address)
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				sync.WSClient.CosignatureUnsubscribe(sync.Account.Address, cosignatureId)
-				return
 			case data := <-cosignatureChanel:
 				sync.logger.Debug(
 					"Got cosignature transaction by websocket:",

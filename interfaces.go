@@ -18,9 +18,11 @@ var (
 )
 
 var (
-	ErrCatapultTimeout     = errors.New("catapult is not responding for too long")
-	ErrCoSignTimeout       = errors.New("no aggregate transaction is requested to cosign")
-	ErrTxnDeadlineExceeded = errors.New("transaction deadline exceeded")
+	ErrCatapultTimeout         = errors.New("catapult is not responding for too long")
+	ErrCoSignTimeout           = errors.New("no aggregate transaction is requested to cosign")
+	ErrCannotGetAggTransaction = errors.New("cannot get aggregate transaction to cosig")
+	ErrTxnDeadlineExceeded     = errors.New("transaction deadline exceeded")
+	ErrNilHashPassed           = errors.New("nil hash passed")
 )
 
 type TransactionSyncer interface {
@@ -45,7 +47,7 @@ type transactionAnnouncer interface {
 type transactionCache interface {
 	Unconfirmed() []*sdk.Hash
 
-	UnCosignedTransaction(hash *sdk.Hash) *sdk.AggregateTransaction
+	UnCosignedTransaction(hash *sdk.Hash) <-chan *AggregatedAddedResult
 
 	UnCosignedTransactions() []*sdk.AggregateTransaction
 }
